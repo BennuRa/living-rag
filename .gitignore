@@ -1,0 +1,25 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Node.js
+node_modules/
+.next/
+out/
+
+# Generated runtime files
+*.log
+data/
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

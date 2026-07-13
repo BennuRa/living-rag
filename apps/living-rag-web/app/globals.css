@@ -1,0 +1,258 @@
+@import "tailwindcss";
+
+:root {
+  --paper: #f2eee4;
+  --ink: #1c2921;
+  --muted: #667168;
+  --line: #c8c2b5;
+  --moss: #294d3c;
+  --signal: #df4c24;
+  --success: #5f9d69;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--paper);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.site-shell {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding: 0 6vw;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brand-mark {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.brand-name,
+.build-status,
+.eyebrow,
+.capability-code,
+.footer {
+  letter-spacing: 0.12em;
+}
+
+.brand-name {
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.build-status {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.67rem;
+}
+
+.status-dot,
+.pulse {
+  display: inline-block;
+  border-radius: 999px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--success);
+}
+
+.hero {
+  border-bottom: 1px solid var(--line);
+  padding: clamp(4.5rem, 10vw, 9rem) 6vw 4.5rem;
+}
+
+.eyebrow {
+  margin: 0 0 1.5rem;
+  color: var(--signal);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+h1 {
+  max-width: 1120px;
+  margin: 0;
+  font-family: Georgia, "Songti SC", "STSong", serif;
+  font-size: clamp(3.25rem, 8vw, 7.6rem);
+  font-weight: 500;
+  letter-spacing: -0.065em;
+  line-height: 0.94;
+}
+
+h1 em {
+  color: var(--moss);
+}
+
+.hero-description {
+  margin: 2.4rem 0;
+  color: var(--muted);
+  font-size: clamp(1rem, 1.6vw, 1.2rem);
+  line-height: 1.8;
+}
+
+.api-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+  border: 1px solid var(--ink);
+  padding: 0.8rem 1rem;
+  font-size: 0.78rem;
+}
+
+.api-status code {
+  color: var(--signal);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-weight: 700;
+}
+
+.pulse {
+  width: 8px;
+  height: 8px;
+  background: #c79555;
+  animation: blink 1.5s ease-in-out infinite;
+}
+
+.api-status--online .pulse {
+  background: var(--success);
+  animation: none;
+}
+
+.api-status--offline .pulse {
+  background: var(--signal);
+  animation: none;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.capability-grid {
+  display: grid;
+  margin: 0 6vw;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.capability-card {
+  min-height: 270px;
+  border-right: 1px solid var(--line);
+  padding: 2.25rem 2rem 2.5rem 0;
+}
+
+.capability-card + .capability-card {
+  padding-left: 2rem;
+}
+
+.capability-card:last-child {
+  border-right: 0;
+}
+
+.card-index {
+  color: var(--line);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2.3rem;
+}
+
+.capability-code {
+  margin: 1.5rem 0 0.45rem;
+  color: var(--signal);
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.capability-card h2 {
+  margin: 0;
+  font-family: Georgia, "Songti SC", "STSong", serif;
+  font-size: 1.8rem;
+  font-weight: 500;
+}
+
+.capability-description {
+  max-width: 19rem;
+  margin: 0.9rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.75;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: auto;
+  border-top: 1px solid var(--line);
+  padding: 1.35rem 6vw;
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+@media (max-width: 720px) {
+  .build-status {
+    display: none;
+  }
+
+  .capability-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .capability-card,
+  .capability-card + .capability-card {
+    min-height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 2rem 0;
+  }
+
+  .capability-card:last-child {
+    border-bottom: 0;
+  }
+
+  .footer {
+    flex-direction: column;
+  }
+}
