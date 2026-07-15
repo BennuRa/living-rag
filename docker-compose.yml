@@ -29,7 +29,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./apps/living-rag-api/app:/app/app
+      - ./apps/living-rag-api:/app
     depends_on:
       postgres:
         condition: service_healthy
