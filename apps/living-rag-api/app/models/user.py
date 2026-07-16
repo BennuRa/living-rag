@@ -105,3 +105,9 @@ class User(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+
+    chat_threads: Mapped[list["ChatThread"]] = relationship(
+        back_populates="user",
+        passive_deletes=True,
+        order_by="ChatThread.created_at",
+    )

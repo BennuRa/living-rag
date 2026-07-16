@@ -1,5 +1,15 @@
 """ORM model exports."""
 
+from app.models.chat_message import (
+    ChatMessage,
+    ChatMessageRole,
+    ChatMessageStatus,
+)
+from app.models.chat_thread import (
+    ChatSubject,
+    ChatThread,
+    ChatThreadStatus,
+)
 from app.models.document import (
     Document,
     DocumentStatus,
@@ -20,6 +30,12 @@ from app.models.refund_request import (
 from app.models.user import User, UserStatus
 
 __all__ = [
+    "ChatMessage",
+    "ChatMessageRole",
+    "ChatMessageStatus",
+    "ChatSubject",
+    "ChatThread",
+    "ChatThreadStatus",
     "Document",
     "DocumentStatus",
     "DocumentVersion",

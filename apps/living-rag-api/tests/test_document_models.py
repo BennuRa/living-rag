@@ -21,7 +21,16 @@ from app.models.membership_account import (
     MembershipAccountStatus,
     MembershipTier,
 )
-
+from app.models.chat_message import (
+    ChatMessage,
+    ChatMessageRole,
+    ChatMessageStatus,
+)
+from app.models.chat_thread import (
+    ChatSubject,
+    ChatThread,
+    ChatThreadStatus,
+)
 from app.models.user import User, UserStatus
 
 def test_create_document_and_first_version(db_session: Session) -> None:
@@ -775,3 +784,219 @@ def test_reject_approved_amount_greater_than_requested_amount(
         db_session.flush()
 
     db_session.rollback()
+
+
+def test_create_chat_thread_with_ordered_messages(
+    db_session: Session,
+) -> None:
+    """A chat thread owns ordered messages with roles and citations."""
+
+    user = User(
+        external_id="crm-user-chat-40001",
+        display_name="聊天测试用户",
+    )
+
+    thread = ChatThread(
+        user=user,
+        title="退款政策咨询",
+        subject=ChatSubject.REFUND,
+        metadata_={
+            "source": "web",
+            "locale": "zh-CN",
+        },
+    )
+
+    user_message = ChatMessage(
+        thread=thread,
+        sequence_number=1,
+        role=ChatMessageRole.USER,
+        content="普通会员签收后多久可以申请退款？",
+        status=ChatMessageStatus.COMPLETED,
+    )
+
+    assistant_message = ChatMessage(
+        thread=thread,
+        sequence_number=2,
+        role=ChatMessageRole.ASSISTANT,
+        content="请根据当前有效退款政策判断。",
+        status=ChatMessageStatus.COMPLETED,
+        citations=[
+            {
+                "document_id": "document-001",
+                "document_version_id": "version-003",
+                "chunk_id": "chunk-007",
+                "quote": "普通会员签收后 7 天内可以申请退款。",
+            }
+        ],
+        metadata_={
+            "model": "mock-model",
+            "prompt_version": "v1",
+        },
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    assert isinstance(thread.id, UUID)
+    assert isinstance(user_message.id, UUID)
+    assert isinstance(assistant_message.id, UUID)
+    assert thread.user is user
+    assert user.chat_threads == [thread]
+    assert user_message.thread is thread
+    assert assistant_message.thread is thread
+    assert thread.messages == [
+        user_message,
+        assistant_message,
+    ]
+    assert [
+        message.sequence_number
+        for message in thread.messages
+    ] == [1, 2]
+    assert thread.status is ChatThreadStatus.ACTIVE
+    assert thread.subject is ChatSubject.REFUND
+    assert user_message.role is ChatMessageRole.USER
+    assert assistant_message.role is ChatMessageRole.ASSISTANT
+    assert user_message.status is ChatMessageStatus.COMPLETED
+    assert assistant_message.citations == [
+        {
+            "document_id": "document-001",
+            "document_version_id": "version-003",
+            "chunk_id": "chunk-007",
+            "quote": "普通会员签收后 7 天内可以申请退款。",
+        }
+    ]
+    assert thread.metadata_ == {
+        "source": "web",
+        "locale": "zh-CN",
+    }
+
+
+def test_reject_duplicate_message_sequence_number(
+    db_session: Session,
+) -> None:
+    """One thread cannot have two messages with the same sequence number."""
+
+    user = User(
+        external_id="crm-user-chat-40002",
+        display_name="重复消息序号用户",
+    )
+
+    thread = ChatThread(user=user)
+
+    first_message = ChatMessage(
+        thread=thread,
+        sequence_number=1,
+        role=ChatMessageRole.USER,
+        content="第一条消息。",
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    duplicate_message = ChatMessage(
+        thread_id=thread.id,
+        sequence_number=1,
+        role=ChatMessageRole.ASSISTANT,
+        content="错误地重复使用第一条消息序号。",
+    )
+
+    db_session.add(duplicate_message)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+@pytest.mark.parametrize("invalid_sequence_number", [0, -1])
+def test_reject_non_positive_message_sequence_number(
+    db_session: Session,
+    invalid_sequence_number: int,
+) -> None:
+    """A chat message sequence number must be greater than zero."""
+
+    user = User(
+        external_id=f"crm-user-chat-sequence-{abs(invalid_sequence_number)}",
+        display_name="消息序号测试用户",
+    )
+
+    thread = ChatThread(user=user)
+
+    db_session.add(user)
+    db_session.flush()
+
+    invalid_message = ChatMessage(
+        thread_id=thread.id,
+        sequence_number=invalid_sequence_number,
+        role=ChatMessageRole.USER,
+        content="非法消息序号测试内容。",
+    )
+
+    db_session.add(invalid_message)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+def test_reject_blank_chat_message_content(
+    db_session: Session,
+) -> None:
+    """A chat message cannot contain only whitespace."""
+
+    user = User(
+        external_id="crm-user-chat-40003",
+        display_name="空消息测试用户",
+    )
+
+    thread = ChatThread(user=user)
+
+    db_session.add(user)
+    db_session.flush()
+
+    invalid_message = ChatMessage(
+        thread_id=thread.id,
+        sequence_number=1,
+        role=ChatMessageRole.USER,
+        content="   ",
+    )
+
+    db_session.add(invalid_message)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+def test_archive_chat_thread_without_deleting_messages(
+    db_session: Session,
+) -> None:
+    """A thread can be archived while keeping its message history."""
+
+    user = User(
+        external_id="crm-user-chat-40004",
+        display_name="归档线程测试用户",
+    )
+
+    thread = ChatThread(
+        user=user,
+        status=ChatThreadStatus.ARCHIVED,
+        subject=ChatSubject.GENERAL,
+    )
+
+    message = ChatMessage(
+        thread=thread,
+        sequence_number=1,
+        role=ChatMessageRole.SYSTEM,
+        content="对话已归档。",
+        status=ChatMessageStatus.COMPLETED,
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    assert thread.status is ChatThreadStatus.ARCHIVED
+    assert message in thread.messages
+    assert message.status is ChatMessageStatus.COMPLETED
