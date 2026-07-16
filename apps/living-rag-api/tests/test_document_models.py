@@ -1,5 +1,10 @@
 from uuid import UUID
-
+from decimal import Decimal
+from app.models.order import Order, OrderStatus
+from app.models.refund_request import (
+    RefundRequest,
+    RefundRequestStatus,
+)
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -11,7 +16,13 @@ from app.models.document import (
     DocumentVersionStatus,
 )
 from app.models.document_chunk import DocumentChunk
+from app.models.membership_account import (
+    MembershipAccount,
+    MembershipAccountStatus,
+    MembershipTier,
+)
 
+from app.models.user import User, UserStatus
 
 def test_create_document_and_first_version(db_session: Session) -> None:
     """A document and its first content snapshot keep their relationship and defaults."""
@@ -277,6 +288,488 @@ def test_reject_blank_chunk_content(
     )
 
     db_session.add(invalid_chunk)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+
+
+def test_create_user_with_defaults_and_metadata(
+    db_session: Session,
+) -> None:
+    """A user keeps identity data, defaults, and metadata."""
+
+    user = User(
+        external_id="crm-user-10001",
+        email="zhangsan@example.com",
+        display_name="张三",
+        metadata_={
+            "source": "crm_import",
+            "language": "zh-CN",
+        },
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    assert isinstance(user.id, UUID)
+    assert user.external_id == "crm-user-10001"
+    assert user.email == "zhangsan@example.com"
+    assert user.display_name == "张三"
+    assert user.status is UserStatus.ACTIVE
+    assert user.metadata_ == {
+        "source": "crm_import",
+        "language": "zh-CN",
+    }
+
+
+def test_create_disabled_user(
+    db_session: Session,
+) -> None:
+    """A user can be explicitly disabled without being deleted."""
+
+    user = User(
+        external_id="crm-user-10002",
+        display_name="李四",
+        status=UserStatus.DISABLED,
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    assert user.status is UserStatus.DISABLED
+    assert user.email is None
+    assert user.metadata_ == {}
+
+
+def test_reject_duplicate_user_external_id(
+    db_session: Session,
+) -> None:
+    """Two users cannot share the same external identity."""
+
+    first_user = User(
+        external_id="crm-user-10003",
+        display_name="王五",
+    )
+
+    db_session.add(first_user)
+    db_session.flush()
+
+    duplicate_user = User(
+        external_id="crm-user-10003",
+        display_name="赵六",
+    )
+
+    db_session.add(duplicate_user)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+
+
+
+def test_create_membership_account_for_a_user(
+    db_session: Session,
+) -> None:
+    """A user can own one membership account with defaults and metadata."""
+
+    user = User(
+        external_id="crm-user-20001",
+        display_name="会员用户",
+    )
+
+    account = MembershipAccount(
+        user=user,
+        membership_number="MBR-20001",
+        metadata_={
+            "source": "crm_import",
+            "region": "华东",
+        },
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    assert isinstance(account.id, UUID)
+    assert account.user is user
+    assert user.membership_account is account
+    assert account.membership_number == "MBR-20001"
+    assert account.tier is MembershipTier.STANDARD
+    assert account.status is MembershipAccountStatus.ACTIVE
+    assert account.points == 0
+    assert account.metadata_ == {
+        "source": "crm_import",
+        "region": "华东",
+    }
+
+
+def test_reject_two_membership_accounts_for_the_same_user(
+    db_session: Session,
+) -> None:
+    """One user cannot own two membership accounts."""
+
+    user = User(
+        external_id="crm-user-20002",
+        display_name="重复账户用户",
+    )
+
+    first_account = MembershipAccount(
+        user=user,
+        membership_number="MBR-20002",
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    duplicate_account = MembershipAccount(
+        user_id=user.id,
+        membership_number="MBR-20003",
+    )
+
+    db_session.add(duplicate_account)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+def test_reject_duplicate_membership_number(
+    db_session: Session,
+) -> None:
+    """Two membership accounts cannot share the same membership number."""
+
+    first_user = User(
+        external_id="crm-user-20003",
+        display_name="第一位会员",
+    )
+
+    first_account = MembershipAccount(
+        user=first_user,
+        membership_number="MBR-20004",
+    )
+
+    db_session.add(first_user)
+    db_session.flush()
+
+    second_user = User(
+        external_id="crm-user-20004",
+        display_name="第二位会员",
+    )
+
+    db_session.add(second_user)
+    db_session.flush()
+
+    duplicate_account = MembershipAccount(
+        user_id=second_user.id,
+        membership_number="MBR-20004",
+    )
+
+    db_session.add(duplicate_account)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+@pytest.mark.parametrize("invalid_points", [-1, -100])
+def test_reject_negative_membership_points(
+    db_session: Session,
+    invalid_points: int,
+) -> None:
+    """Membership points cannot be negative."""
+
+    user = User(
+        external_id=f"crm-user-points-{abs(invalid_points)}",
+        display_name="积分测试用户",
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    invalid_account = MembershipAccount(
+        user=user,
+        membership_number=f"MBR-POINTS-{abs(invalid_points)}",
+        points=invalid_points,
+    )
+
+    db_session.add(invalid_account)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+def test_create_order_and_refund_request(
+    db_session: Session,
+) -> None:
+    """An order can own a traceable refund request."""
+
+    user = User(
+        external_id="crm-user-order-30001",
+        display_name="订单测试用户",
+    )
+
+    membership_account = MembershipAccount(
+        user=user,
+        membership_number="MBR-30001",
+        tier=MembershipTier.GOLD,
+    )
+
+    order = Order(
+        membership_account=membership_account,
+        order_number="ORD-30001",
+        status=OrderStatus.COMPLETED,
+        total_amount=Decimal("199.90"),
+        metadata_={
+            "product_name": "会员年卡",
+        },
+    )
+
+    refund_request = RefundRequest(
+        order=order,
+        request_number="REF-30001",
+        requested_amount=Decimal("99.90"),
+        reason="商品与描述不符",
+        metadata_={
+            "policy_version": "refund-policy-v3",
+        },
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    assert isinstance(order.id, UUID)
+    assert isinstance(refund_request.id, UUID)
+    assert order.membership_account is membership_account
+    assert order in membership_account.orders
+    assert refund_request.order is order
+    assert refund_request in order.refund_requests
+    assert order.status is OrderStatus.COMPLETED
+    assert refund_request.status is RefundRequestStatus.PENDING
+    assert order.total_amount == Decimal("199.90")
+    assert refund_request.requested_amount == Decimal("99.90")
+    assert refund_request.approved_amount is None
+    assert order.currency == "CNY"
+    assert order.metadata_ == {
+        "product_name": "会员年卡",
+    }
+    assert refund_request.metadata_ == {
+        "policy_version": "refund-policy-v3",
+    }
+
+
+def test_reject_duplicate_order_number(
+    db_session: Session,
+) -> None:
+    """Two orders cannot share the same order number."""
+
+    user = User(
+        external_id="crm-user-order-30002",
+        display_name="订单编号测试用户",
+    )
+
+    membership_account = MembershipAccount(
+        user=user,
+        membership_number="MBR-30002",
+    )
+
+    first_order = Order(
+        membership_account=membership_account,
+        order_number="ORD-30002",
+        total_amount=Decimal("100.00"),
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    duplicate_order = Order(
+        membership_account_id=membership_account.id,
+        order_number="ORD-30002",
+        total_amount=Decimal("80.00"),
+    )
+
+    db_session.add(duplicate_order)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+@pytest.mark.parametrize(
+    "invalid_total_amount",
+    [
+        Decimal("-0.01"),
+        Decimal("-100.00"),
+    ],
+)
+def test_reject_negative_order_total_amount(
+    db_session: Session,
+    invalid_total_amount: Decimal,
+) -> None:
+    """An order total amount cannot be negative."""
+
+    user = User(
+        external_id=f"crm-user-order-amount-{abs(invalid_total_amount)}",
+        display_name="订单金额测试用户",
+    )
+
+    membership_account = MembershipAccount(
+        user=user,
+        membership_number=f"MBR-AMOUNT-{abs(invalid_total_amount)}",
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    invalid_order = Order(
+        membership_account_id=membership_account.id,
+        order_number=f"ORD-AMOUNT-{abs(invalid_total_amount)}",
+        total_amount=invalid_total_amount,
+    )
+
+    db_session.add(invalid_order)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+def test_reject_duplicate_refund_request_number(
+    db_session: Session,
+) -> None:
+    """Two refund requests cannot share the same request number."""
+
+    user = User(
+        external_id="crm-user-refund-30001",
+        display_name="退款编号测试用户",
+    )
+
+    membership_account = MembershipAccount(
+        user=user,
+        membership_number="MBR-REFUND-30001",
+    )
+
+    order = Order(
+        membership_account=membership_account,
+        order_number="ORD-REFUND-30001",
+        total_amount=Decimal("100.00"),
+    )
+
+    first_request = RefundRequest(
+        order=order,
+        request_number="REF-30002",
+        requested_amount=Decimal("30.00"),
+        reason="第一次退款申请",
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    duplicate_request = RefundRequest(
+        order_id=order.id,
+        request_number="REF-30002",
+        requested_amount=Decimal("20.00"),
+        reason="重复退款申请编号",
+    )
+
+    db_session.add(duplicate_request)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+@pytest.mark.parametrize(
+    "invalid_requested_amount",
+    [
+        Decimal("0.00"),
+        Decimal("-1.00"),
+    ],
+)
+def test_reject_non_positive_requested_refund_amount(
+    db_session: Session,
+    invalid_requested_amount: Decimal,
+) -> None:
+    """A refund request amount must be greater than zero."""
+
+    user = User(
+        external_id=f"crm-user-refund-amount-{abs(invalid_requested_amount)}",
+        display_name="退款金额测试用户",
+    )
+
+    membership_account = MembershipAccount(
+        user=user,
+        membership_number=f"MBR-REFUND-AMOUNT-{abs(invalid_requested_amount)}",
+    )
+
+    order = Order(
+        membership_account=membership_account,
+        order_number=f"ORD-REFUND-AMOUNT-{abs(invalid_requested_amount)}",
+        total_amount=Decimal("100.00"),
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    invalid_request = RefundRequest(
+        order_id=order.id,
+        request_number=f"REF-REFUND-AMOUNT-{abs(invalid_requested_amount)}",
+        requested_amount=invalid_requested_amount,
+        reason="非法退款金额测试",
+    )
+
+    db_session.add(invalid_request)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+def test_reject_approved_amount_greater_than_requested_amount(
+    db_session: Session,
+) -> None:
+    """An approved refund amount cannot exceed the requested amount."""
+
+    user = User(
+        external_id="crm-user-refund-amount-30003",
+        display_name="批准金额测试用户",
+    )
+
+    membership_account = MembershipAccount(
+        user=user,
+        membership_number="MBR-REFUND-AMOUNT-30003",
+    )
+
+    order = Order(
+        membership_account=membership_account,
+        order_number="ORD-REFUND-AMOUNT-30003",
+        total_amount=Decimal("100.00"),
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    invalid_request = RefundRequest(
+        order_id=order.id,
+        request_number="REF-REFUND-AMOUNT-30003",
+        requested_amount=Decimal("30.00"),
+        approved_amount=Decimal("50.00"),
+        reason="批准金额超过申请金额",
+    )
+
+    db_session.add(invalid_request)
 
     with pytest.raises(IntegrityError):
         db_session.flush()
