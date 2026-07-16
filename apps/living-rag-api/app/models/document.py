@@ -1,7 +1,7 @@
 """SQLAlchemy models for stable documents and their versioned content snapshots."""
 
 from __future__ import annotations
-
+from app.models.document_chunk import DocumentChunk
 from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
@@ -161,3 +161,10 @@ class DocumentVersion(Base):
     )
 
     document: Mapped["Document"] = relationship(back_populates="versions")
+
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="document_version",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="DocumentChunk.chunk_index",
+    )
