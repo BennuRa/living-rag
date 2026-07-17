@@ -1,10 +1,21 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 from decimal import Decimal
 from app.models.order import Order, OrderStatus
 from app.models.refund_request import (
     RefundRequest,
     RefundRequestStatus,
 )
+from app.models.agent_node_run import (
+    AgentNodeRun,
+    AgentNodeRunStatus,
+)
+from app.models.agent_run import AgentRun, AgentRunStatus
+from app.models.audit_log import (
+    AuditActorType,
+    AuditLog,
+    AuditResult,
+)
+from app.models.tool_call import ToolCall, ToolCallStatus
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -1000,3 +1011,249 @@ def test_archive_chat_thread_without_deleting_messages(
     assert thread.status is ChatThreadStatus.ARCHIVED
     assert message in thread.messages
     assert message.status is ChatMessageStatus.COMPLETED
+
+def test_create_agent_run_with_nodes_tools_and_audit_log(
+    db_session: Session,
+) -> None:
+    """A complete Agent run keeps node, tool, message, and audit links."""
+
+    user = User(
+        external_id="crm-user-agent-50001",
+        display_name="Agent 追踪测试用户",
+    )
+
+    thread = ChatThread(
+        user=user,
+        subject=ChatSubject.REFUND,
+    )
+
+    message = ChatMessage(
+        thread=thread,
+        sequence_number=1,
+        role=ChatMessageRole.USER,
+        content="请判断这个订单是否符合退款条件。",
+        status=ChatMessageStatus.COMPLETED,
+    )
+
+    trace_id = uuid4()
+
+    agent_run = AgentRun(
+        thread=thread,
+        message=message,
+        trace_id=trace_id,
+        status=AgentRunStatus.SUCCEEDED,
+        intent="refund_eligibility",
+        workflow_version="0.1.0",
+        model_name="mock-model",
+        prompt_version="v1",
+        duration_ms=850,
+        input_tokens=1200,
+        output_tokens=350,
+        metadata_={
+            "source": "pytest",
+        },
+    )
+
+    node_run = AgentNodeRun(
+        agent_run=agent_run,
+        node_name="retrieve_documents",
+        sequence_number=1,
+        status=AgentNodeRunStatus.SUCCEEDED,
+        input_snapshot={
+            "query": "退款条件",
+        },
+        output_snapshot={
+            "result_count": 3,
+        },
+        duration_ms=300,
+    )
+
+    tool_call = ToolCall(
+        agent_run=agent_run,
+        node_run=node_run,
+        tool_name="search_documents",
+        status=ToolCallStatus.SUCCEEDED,
+        arguments={
+            "query": "退款条件",
+        },
+        result={
+            "matches": 3,
+        },
+        duration_ms=280,
+    )
+
+    audit_log = AuditLog(
+        actor_type=AuditActorType.AGENT,
+        action="refund.eligibility_checked",
+        resource_type="refund_request",
+        result=AuditResult.SUCCESS,
+        reason="Agent completed deterministic eligibility check.",
+        trace_id=trace_id,
+        before_snapshot={},
+        after_snapshot={
+            "eligible": True,
+        },
+    )
+
+    db_session.add(user)
+    db_session.add(audit_log)
+    db_session.flush()
+
+    assert isinstance(agent_run.id, UUID)
+    assert isinstance(node_run.id, UUID)
+    assert isinstance(tool_call.id, UUID)
+    assert isinstance(audit_log.id, UUID)
+    assert agent_run.thread is thread
+    assert agent_run.message is message
+    assert agent_run.trace_id == trace_id
+    assert thread.agent_runs == [agent_run]
+    assert message.agent_runs == [agent_run]
+    assert agent_run.node_runs == [node_run]
+    assert node_run.agent_run is agent_run
+    assert agent_run.tool_calls == [tool_call]
+    assert node_run.tool_calls == [tool_call]
+    assert tool_call.agent_run is agent_run
+    assert tool_call.node_run is node_run
+    assert agent_run.status is AgentRunStatus.SUCCEEDED
+    assert node_run.status is AgentNodeRunStatus.SUCCEEDED
+    assert tool_call.status is ToolCallStatus.SUCCEEDED
+    assert audit_log.actor_type is AuditActorType.AGENT
+    assert audit_log.result is AuditResult.SUCCESS
+    assert audit_log.trace_id == trace_id
+
+
+def test_reject_duplicate_agent_node_sequence_number(
+    db_session: Session,
+) -> None:
+    """One Agent run cannot have two nodes with the same sequence number."""
+
+    user = User(
+        external_id="crm-user-agent-50002",
+        display_name="重复节点序号用户",
+    )
+
+    thread = ChatThread(user=user)
+
+    agent_run = AgentRun(
+        thread=thread,
+        trace_id=uuid4(),
+    )
+
+    first_node = AgentNodeRun(
+        agent_run=agent_run,
+        node_name="load_context",
+        sequence_number=1,
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    duplicate_node = AgentNodeRun(
+        agent_run_id=agent_run.id,
+        node_name="classify_intent",
+        sequence_number=1,
+    )
+
+    db_session.add(duplicate_node)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+@pytest.mark.parametrize("invalid_sequence_number", [0, -1])
+def test_reject_non_positive_agent_node_sequence_number(
+    db_session: Session,
+    invalid_sequence_number: int,
+) -> None:
+    """An Agent node sequence number must be greater than zero."""
+
+    user = User(
+        external_id=(
+            f"crm-user-agent-sequence-{abs(invalid_sequence_number)}"
+        ),
+        display_name="Agent 节点序号用户",
+    )
+
+    thread = ChatThread(user=user)
+
+    agent_run = AgentRun(
+        thread=thread,
+        trace_id=uuid4(),
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    invalid_node = AgentNodeRun(
+        agent_run_id=agent_run.id,
+        node_name="invalid_node",
+        sequence_number=invalid_sequence_number,
+    )
+
+    db_session.add(invalid_node)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
+
+
+def test_create_failed_tool_call_and_denied_audit_log(
+    db_session: Session,
+) -> None:
+    """Failures and denied actions remain explicitly auditable."""
+
+    user = User(
+        external_id="crm-user-agent-50003",
+        display_name="失败追踪用户",
+    )
+
+    thread = ChatThread(user=user)
+
+    agent_run = AgentRun(
+        thread=thread,
+        trace_id=uuid4(),
+        status=AgentRunStatus.FAILED,
+        error_code="TOOL_TIMEOUT",
+        error_message="Search service timed out.",
+    )
+
+    tool_call = ToolCall(
+        agent_run=agent_run,
+        tool_name="search_documents",
+        status=ToolCallStatus.TIMEOUT,
+        error_code="TIMEOUT",
+        error_message="Search service timed out.",
+    )
+
+    audit_log = AuditLog(
+        actor_type=AuditActorType.AGENT,
+        action="refund.execute",
+        resource_type="refund_request",
+        result=AuditResult.DENIED,
+        reason="High-risk operation requires human approval.",
+        trace_id=agent_run.trace_id,
+        before_snapshot={
+            "status": "approved",
+        },
+        after_snapshot={
+            "status": "pending_human_approval",
+        },
+    )
+
+    db_session.add(user)
+    db_session.add(audit_log)
+    db_session.flush()
+
+    assert agent_run.status is AgentRunStatus.FAILED
+    assert agent_run.error_code == "TOOL_TIMEOUT"
+    assert tool_call.status is ToolCallStatus.TIMEOUT
+    assert audit_log.result is AuditResult.DENIED
+    assert audit_log.before_snapshot == {
+        "status": "approved",
+    }
+    assert audit_log.after_snapshot == {
+        "status": "pending_human_approval",
+    }

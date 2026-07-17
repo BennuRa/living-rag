@@ -1,5 +1,15 @@
 """ORM model exports."""
 
+from app.models.agent_node_run import (
+    AgentNodeRun,
+    AgentNodeRunStatus,
+)
+from app.models.agent_run import AgentRun, AgentRunStatus
+from app.models.audit_log import (
+    AuditActorType,
+    AuditLog,
+    AuditResult,
+)
 from app.models.chat_message import (
     ChatMessage,
     ChatMessageRole,
@@ -27,9 +37,17 @@ from app.models.refund_request import (
     RefundRequest,
     RefundRequestStatus,
 )
+from app.models.tool_call import ToolCall, ToolCallStatus
 from app.models.user import User, UserStatus
 
 __all__ = [
+    "AgentNodeRun",
+    "AgentNodeRunStatus",
+    "AgentRun",
+    "AgentRunStatus",
+    "AuditActorType",
+    "AuditLog",
+    "AuditResult",
     "ChatMessage",
     "ChatMessageRole",
     "ChatMessageStatus",
@@ -48,6 +66,8 @@ __all__ = [
     "OrderStatus",
     "RefundRequest",
     "RefundRequestStatus",
+    "ToolCall",
+    "ToolCallStatus",
     "User",
     "UserStatus",
 ]

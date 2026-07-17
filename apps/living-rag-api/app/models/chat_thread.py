@@ -136,3 +136,9 @@ class ChatThread(Base):
         passive_deletes=True,
         order_by="ChatMessage.sequence_number",
     )
+
+    agent_runs: Mapped[list["AgentRun"]] = relationship(
+        back_populates="thread",
+        passive_deletes=True,
+        order_by="AgentRun.created_at",
+    )
