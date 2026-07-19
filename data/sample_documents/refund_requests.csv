@@ -1,0 +1,7 @@
+order_number,request_number,status,requested_amount,approved_amount,reason,rejection_reason,requested_at,reviewed_at,completed_at,metadata_json
+O2025001,R2025001,rejected,199.00,,签收后发现商品尺寸不适合,普通会员无理由退货申请已超过签收后 7 个自然日的期限,2026-01-17T10:00:00+08:00,2026-01-17T11:30:00+08:00,,"{""policy_document"":""REFUND-POLICY-V3"",""received_days_before_request"":12}"
+O2025002,R2025002,approved,399.00,399.00,金卡会员申请退回指定免运费退货商品,,2026-01-20T09:15:00+08:00,2026-01-20T10:00:00+08:00,,"{""policy_document"":""REFUND-POLICY-V3"",""received_days_before_request"":14,""free_return_shipping"":true}"
+O2025003,R2025003,rejected,259.00,,签收后申请无理由退货,银卡会员无理由退货申请已超过签收后 10 个自然日的期限,2026-01-21T14:20:00+08:00,2026-01-21T15:00:00+08:00,,"{""policy_document"":""REFUND-POLICY-V3"",""received_days_before_request"":18}"
+O2025004,R2025004,approved,899.00,899.00,双十一活动订单申请退货,,2025-12-15T10:30:00+08:00,2025-12-15T11:00:00+08:00,,"{""policy_document"":""DOUBLE-11-REFUND-NOTICE-2025"",""received_days_before_request"":25,""campaign_tags"":[""double_11""]}"
+O2025006,R2025006,completed,529.00,529.00,商品质量问题退款,,2025-12-27T09:40:00+08:00,2025-12-27T10:20:00+08:00,2025-12-30T16:00:00+08:00,"{""policy_document"":""REFUND-POLICY-V3"",""refund_type"":""quality_issue""}"
+O2025007,R2025007,rejected,699.00,,申请使用金卡会员退款权益,会员账户当前为 suspended 状态，不能使用金卡延长退款期限；按普通会员期限已超时,2026-01-19T09:00:00+08:00,2026-01-19T09:40:00+08:00,,"{""policy_document"":""REFUND-POLICY-V3"",""received_days_before_request"":14,""membership_status_at_request"":""suspended""}"
