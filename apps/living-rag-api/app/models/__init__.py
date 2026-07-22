@@ -22,6 +22,8 @@ from app.models.chat_thread import (
 )
 from app.models.document import (
     Document,
+    DocumentGovernanceStatus,
+    DocumentSourceType,
     DocumentStatus,
     DocumentVersion,
     DocumentVersionStatus,
@@ -55,6 +57,8 @@ __all__ = [
     "ChatThread",
     "ChatThreadStatus",
     "Document",
+    "DocumentGovernanceStatus",
+    "DocumentSourceType",
     "DocumentStatus",
     "DocumentVersion",
     "DocumentVersionStatus",
