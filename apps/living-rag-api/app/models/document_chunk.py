@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -80,6 +81,11 @@ class DocumentChunk(Base):
     content_hash: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
+    )
+
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(768),
+        nullable=True,
     )
 
     char_start: Mapped[int | None] = mapped_column(
