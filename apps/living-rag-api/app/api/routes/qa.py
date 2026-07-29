@@ -1,5 +1,7 @@
 """HTTP routes for the Living RAG question-answering workflow."""
 
+from datetime import UTC, datetime
+from time import perf_counter
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends
@@ -25,16 +27,17 @@ router = APIRouter(
     tags=["question-answering"],
 )
 
-
-@router.post(
-    "/answer",
-    response_model=QuestionAnswerResponse,
+chat_router = APIRouter(
+    prefix="/api",
+    tags=["chat"],
 )
-def answer_question(
+
+
+def _run_question_answer(
     request: QuestionAnswerRequest,
-    db: Session = Depends(get_db),
+    db: Session,
 ) -> QuestionAnswerResponse:
-    """Answer a question and persist its traceable execution records."""
+    """Execute the grounded QA graph and persist its traceable run."""
 
     trace_id = uuid4()
     embedding_provider = create_embedding_provider()
@@ -56,25 +59,51 @@ def answer_question(
     result = dict(initial_state)
     node_snapshots: list[NodeSnapshot] = []
 
-    for sequence_number, update in enumerate(
-        graph.stream(
-            initial_state,
-            stream_mode="updates",
-        ),
-        start=1,
-    ):
+    graph_updates = graph.stream(
+        initial_state,
+        stream_mode="updates",
+    )
+
+    sequence_number = 0
+
+    while True:
+        node_started_at = datetime.now(UTC)
+        node_started_counter = perf_counter()
+
+        try:
+            update = next(graph_updates)
+        except StopIteration:
+            break
+
         node_name, node_output = next(iter(update.items()))
 
+        input_snapshot = jsonable_encoder(result)
+
         result.update(node_output)
+
+        node_completed_at = datetime.now(UTC)
+        duration_ms = max(
+            0,
+            int(
+                (
+                    perf_counter() - node_started_counter
+                )
+                * 1000
+            ),
+        )
+
+        sequence_number += 1
 
         node_snapshots.append(
             NodeSnapshot(
                 node_name=node_name,
                 sequence_number=sequence_number,
                 status="succeeded",
-                input_snapshot={},
+                input_snapshot=input_snapshot,
                 output_snapshot=jsonable_encoder(node_output),
-                duration_ms=0,
+                started_at=node_started_at,
+                completed_at=node_completed_at,
+                duration_ms=duration_ms,
             ),
         )
 
@@ -112,4 +141,36 @@ def answer_question(
             "limitations",
             [],
         ),
+    )
+
+
+@router.post(
+    "/answer",
+    response_model=QuestionAnswerResponse,
+)
+def answer_question(
+    request: QuestionAnswerRequest,
+    db: Session = Depends(get_db),
+) -> QuestionAnswerResponse:
+    """Answer a question through the backward-compatible QA endpoint."""
+
+    return _run_question_answer(
+        request,
+        db,
+    )
+
+
+@chat_router.post(
+    "/chat",
+    response_model=QuestionAnswerResponse,
+)
+def chat_question(
+    request: QuestionAnswerRequest,
+    db: Session = Depends(get_db),
+) -> QuestionAnswerResponse:
+    """Answer a question through the formal chat endpoint."""
+
+    return _run_question_answer(
+        request,
+        db,
     )

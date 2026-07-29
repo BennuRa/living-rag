@@ -14,6 +14,7 @@ from app.services.qa_nodes import (
     classify_intent,
     generate_answer_node,
     grade_documents_node,
+    load_context_node,
     retrieve_documents_node,
     validate_citations_node,
 )
@@ -41,6 +42,10 @@ def build_qa_graph(
     graph_builder = StateGraph(LivingRAGState)
 
     graph_builder.add_node(
+        "load_context",
+        load_context_node,
+    )
+    graph_builder.add_node(
         "classify_intent",
         classify_intent,
     )
@@ -67,6 +72,10 @@ def build_qa_graph(
 
     graph_builder.add_edge(
         START,
+        "load_context",
+    )
+    graph_builder.add_edge(
+        "load_context",
         "classify_intent",
     )
     graph_builder.add_edge(

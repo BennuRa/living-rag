@@ -17,6 +17,42 @@ from app.services.qa_state import QAState, LivingRAGState
 from app.services.retrieval import search_similar_chunks
 
 
+def load_context_node(
+    state: LivingRAGState,
+) -> dict[str, object]:
+    """Normalize the initial request context before the QA workflow starts."""
+
+    question = state.get("question", "").strip()
+
+    if not question:
+        raise ValueError("Question must not be blank.")
+
+    limit = state.get("limit", 5)
+
+    if not isinstance(limit, int) or isinstance(limit, bool):
+        raise ValueError("limit must be an integer.")
+
+    if limit <= 0:
+        raise ValueError("limit must be greater than zero.")
+
+    normalized_state: dict[str, object] = {
+        "question": question,
+        "limit": limit,
+    }
+
+    user_id = state.get("user_id")
+
+    if user_id is not None:
+        normalized_state["user_id"] = user_id.strip()
+
+    trace_id = state.get("trace_id")
+
+    if trace_id is not None:
+        normalized_state["trace_id"] = trace_id.strip()
+
+    return normalized_state
+
+
 def classify_intent(
     state: LivingRAGState,
 ) -> dict[str, str]:
