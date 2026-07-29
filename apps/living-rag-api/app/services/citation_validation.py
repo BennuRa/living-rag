@@ -1,7 +1,9 @@
 """Citation validation for the Living RAG workflow."""
 
 import re
+from datetime import UTC, datetime
 
+from app.models.document import DocumentGovernanceStatus
 from app.schemas.citation import Citation
 from app.schemas.retrieval import RetrievalResult
 
@@ -12,39 +14,78 @@ _CITATION_PATTERN = re.compile(r"\[(\d+)\]")
 def validate_answer_citations(
     answer: str,
     results: list[RetrievalResult],
+    citation_indices: list[int] | None = None,
 ) -> bool:
-    """Return whether every citation marker points to a retrieved result."""
+    """Validate citation references and the evidence behind them."""
+
     if not answer.strip():
         return False
 
-    citation_numbers = [
+    textual_citation_numbers = [
         int(match)
         for match in _CITATION_PATTERN.findall(answer)
     ]
+
+    if citation_indices is None:
+        citation_numbers = textual_citation_numbers
+    else:
+        citation_numbers = citation_indices
+
+        if set(textual_citation_numbers) != set(citation_indices):
+            return False
 
     if not citation_numbers:
         return False
 
     result_count = len(results)
 
-    return all(
-        1 <= citation_number <= result_count
+    if not all(
+        type(citation_number) is int
+        and 1 <= citation_number <= result_count
         for citation_number in citation_numbers
-    )
+    ):
+        return False
 
+    now = datetime.now(UTC)
+
+    for citation_number in citation_numbers:
+        result = results[citation_number - 1]
+
+        if result.governance_status != DocumentGovernanceStatus.ACTIVE:
+            return False
+
+        if not result.content.strip():
+            return False
+
+        if result.effective_at is not None and result.effective_at > now:
+            return False
+
+        if result.expires_at is not None and result.expires_at <= now:
+            return False
+
+    return True
 
 def build_citations_from_answer(
     answer: str,
     results: list[RetrievalResult],
+    citation_indices: list[int] | None = None,
 ) -> list[Citation]:
-    """Build unique citations from valid answer citation markers."""
-    if not validate_answer_citations(answer, results):
+    """Build unique citations from validated structured or textual references."""
+
+    if not validate_answer_citations(
+        answer,
+        results,
+        citation_indices,
+    ):
         return []
 
-    citation_numbers = [
-        int(match)
-        for match in _CITATION_PATTERN.findall(answer)
-    ]
+    if citation_indices is None:
+        citation_numbers = [
+            int(match)
+            for match in _CITATION_PATTERN.findall(answer)
+        ]
+    else:
+        citation_numbers = citation_indices
 
     citations: list[Citation] = []
     seen_numbers: set[int] = set()
