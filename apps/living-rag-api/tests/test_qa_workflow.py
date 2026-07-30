@@ -1,4 +1,4 @@
-"""Tests for the structured Living RAG QA workflow."""
+"""Living RAG 结构化问答工作流测试。"""
 
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -22,10 +22,10 @@ def make_retrieval_result(
     governance_status: DocumentGovernanceStatus = DocumentGovernanceStatus.ACTIVE,
     effective_at: datetime | None = None,
     expires_at: datetime | None = None,
-    content: str = "Refunds are available within 15 days.",
+    content: str = "退款政策规定，退款期限为签收后的 15 天内。",
     similarity: float = 0.85,
 ) -> RetrievalResult:
-    """Build one deterministic retrieval result for unit tests."""
+    """构造一条用于测试的确定性检索结果。"""
 
     now = datetime.now(UTC)
 
@@ -33,7 +33,7 @@ def make_retrieval_result(
         document_id=uuid4(),
         document_version_id=uuid4(),
         chunk_id=uuid4(),
-        document_title="Refund Policy",
+        document_title="退款政策",
         version_number=3,
         source_type=DocumentSourceType.OFFICIAL_POLICY,
         governance_status=governance_status,
@@ -45,13 +45,13 @@ def make_retrieval_result(
 
 
 def test_mock_llm_returns_structured_answer_with_evidence() -> None:
-    """A grounded answer contains conditions, citation indices, and confidence."""
+    """有证据时，回答应包含条件、引用编号和置信度。"""
 
     provider = MockLLMProvider()
 
     draft = provider.generate_answer(
-        question="What is the refund window?",
-        context="Refund Policy version 3: refunds are available within 15 days.",
+        question="退款期限是多少？",
+        context="退款政策 v3：退款期限为签收后的 15 天内。",
     )
 
     assert draft.answer
@@ -62,18 +62,18 @@ def test_mock_llm_returns_structured_answer_with_evidence() -> None:
 
 
 def test_mock_llm_returns_safe_structured_answer_without_evidence() -> None:
-    """An empty context produces a conservative answer without citations."""
+    """没有证据时，应返回保守回答，并且不包含引用。"""
 
     provider = MockLLMProvider()
 
     draft = provider.generate_answer(
-        question="What is the refund window?",
+        question="退款期限是多少？",
         context="",
     )
 
     assert draft.answer == (
-        "I do not have enough grounded evidence "
-        "to answer this question."
+        "当前知识库中没有足够的有效证据，"
+        "暂时无法可靠回答这个问题。"
     )
     assert draft.conditions == []
     assert draft.citation_indices == []
@@ -82,12 +82,12 @@ def test_mock_llm_returns_safe_structured_answer_without_evidence() -> None:
 
 
 def test_validate_active_current_citation() -> None:
-    """An active, effective, non-expired citation is valid."""
+    """当前有效、已生效且未过期的引用应当通过校验。"""
 
     result = make_retrieval_result()
 
     assert validate_answer_citations(
-        "The answer is supported by [1].",
+        "根据当前政策，退款期限为 15 天。[1]",
         [result],
         [1],
     )
@@ -113,46 +113,46 @@ def test_validate_active_current_citation() -> None:
 def test_reject_invalid_citation_evidence(
     result: RetrievalResult,
 ) -> None:
-    """Invalid status, timing, or blank content must reject a citation."""
+    """无效状态、未生效、已过期或空内容的证据都应被拒绝。"""
 
     assert not validate_answer_citations(
-        "The answer is supported by [1].",
+        "根据当前政策，退款期限为 15 天。[1]",
         [result],
         [1],
     )
 
 
 def test_reject_out_of_range_citation() -> None:
-    """A citation index outside the result list must be rejected."""
+    """超出检索结果范围的引用编号应被拒绝。"""
 
     result = make_retrieval_result()
 
     assert not validate_answer_citations(
-        "The answer is supported by [2].",
+        "根据当前政策，退款期限为 15 天。[2]",
         [result],
         [2],
     )
 
 
 def test_reject_mismatched_text_and_structured_citations() -> None:
-    """Textual markers and structured citation indices must agree."""
+    """文本中的引用编号和结构化引用编号不一致时应被拒绝。"""
 
     result = make_retrieval_result()
 
     assert not validate_answer_citations(
-        "The answer is supported by [1].",
+        "根据当前政策，退款期限为 15 天。[1]",
         [result],
         [2],
     )
 
 
 def test_build_citation_from_structured_index() -> None:
-    """A valid structured index maps to the real retrieval result."""
+    """有效的结构化引用编号应映射到真实检索结果。"""
 
     result = make_retrieval_result()
 
     citations = build_citations_from_answer(
-        "The answer is supported by [1].",
+        "根据当前政策，退款期限为 15 天。[1]",
         [result],
         [1],
     )

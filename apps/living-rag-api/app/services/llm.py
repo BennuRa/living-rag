@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 
 from app.schemas.qa import GroundedAnswerDraft
@@ -35,26 +36,89 @@ class MockLLMProvider(LLMProvider):
 
         if not context.strip():
             return GroundedAnswerDraft(
-                answer=(
-                    "I do not have enough grounded evidence "
-                    "to answer this question."
-                ),
+                answer="当前知识库中没有足够的有效证据，暂时无法可靠回答这个问题。",
                 conditions=[],
                 citation_indices=[],
                 confidence=0.0,
                 limitations=[
-                    "The knowledge base does not contain enough "
-                    "relevant evidence for this question."
+                    "当前检索结果没有提供足够的相关知识库证据。",
                 ],
             )
 
+        normalized_question = question.strip().lower()
+        context_lower = context.lower()
+
+        if any(
+            keyword in normalized_question
+            for keyword in ("退款", "退货", "签收后多久", "退款时限")
+        ):
+            tier_windows = (
+                ("standard", "普通会员", 7),
+                ("silver", "银卡会员", 10),
+                ("gold", "金卡会员", 15),
+                ("platinum", "铂金会员", 20),
+            )
+
+            matched_tier = next(
+                (
+                    (display_name, days)
+                    for policy_tier, display_name, days in tier_windows
+                    if policy_tier in context_lower
+                    and (
+                        policy_tier in normalized_question
+                        or display_name in question
+                        or (policy_tier == "standard" and "普通" in question)
+                    )
+                ),
+                None,
+            )
+
+            if matched_tier is not None:
+                tier_name, window_days = matched_tier
+
+                return GroundedAnswerDraft(
+                    answer=(
+                        f"目前{tier_name}在订单签收后的 "
+                        f"{window_days} 天内可以申请退款。"
+                        "退款期限从订单签收日期开始计算。[1]"
+                    ),
+                    conditions=[
+                        "退款申请期限从订单签收日期开始计算。",
+                        "如果存在活动规则或特殊商品条件，应以对应有效政策和人工审核结果为准。",
+                    ],
+                    citation_indices=[1],
+                    confidence=0.9,
+                    limitations=[],
+                )
+
+            window_match = re.search(
+                r"(?:within|在|签收后)\s*(\d+)\s*(?:days|天)",
+                context_lower,
+            )
+
+            if window_match is not None:
+                window_days = window_match.group(1)
+
+                return GroundedAnswerDraft(
+                    answer=(
+                        f"根据当前检索到的政策，相关退款期限为签收后的 "
+                        f"{window_days} 天内。[1]"
+                    ),
+                    conditions=[
+                        "退款期限从订单签收日期开始计算。",
+                    ],
+                    citation_indices=[1],
+                    confidence=0.85,
+                    limitations=[],
+                )
+
         return GroundedAnswerDraft(
             answer=(
-                "Based on the retrieved evidence [1], "
-                "the answer is supported by the first source."
+                "根据当前检索到的知识库证据，"
+                "相关结论可以由第一个有效来源支持。[1]"
             ),
             conditions=[
-                "The answer is limited to the retrieved knowledge-base evidence."
+                "回答仅基于当前检索到的知识库证据。",
             ],
             citation_indices=[1],
             confidence=0.85,

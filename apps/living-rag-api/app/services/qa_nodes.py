@@ -177,6 +177,7 @@ def retrieve_documents_node(
     rows = search_similar_chunks(
         db,
         query_embedding,
+        query_text=question,
         limit=limit,
         now=datetime.now(UTC),
     )
@@ -208,6 +209,13 @@ def grade_documents_node(
 ) -> dict[str, list[RetrievalResult]]:
     """Keep only current, non-blank, sufficiently relevant evidence."""
 
+    intent = state.get("intent")
+
+    if intent == "unknown":
+        return {
+            "graded_results": [],
+        }
+
     retrieval_results = state.get("retrieval_results", [])
 
     graded_results = [
@@ -223,7 +231,6 @@ def grade_documents_node(
     return {
         "graded_results": graded_results,
     }
-
 
 def build_context_node(
     state: LivingRAGState,

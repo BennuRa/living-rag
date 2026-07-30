@@ -36,6 +36,7 @@ def search_retrieval(
     rows = search_similar_chunks(
         db,
         query_embedding,
+        query_text=request.query,
         limit=request.limit,
     )
 
