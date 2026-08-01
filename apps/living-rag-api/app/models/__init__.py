@@ -29,6 +29,7 @@ from app.models.document import (
     DocumentVersionStatus,
 )
 from app.models.document_chunk import DocumentChunk
+from app.models.policy_rule import PolicyRule
 from app.models.membership_account import (
     MembershipAccount,
     MembershipAccountStatus,
@@ -63,6 +64,7 @@ __all__ = [
     "DocumentVersion",
     "DocumentVersionStatus",
     "DocumentChunk",
+    "PolicyRule",
     "MembershipAccount",
     "MembershipAccountStatus",
     "MembershipTier",
