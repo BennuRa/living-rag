@@ -174,9 +174,8 @@ def test_upload_new_content_with_wrong_version_number_returns_422(
     assert first_response.status_code == 200
     assert second_response.status_code == 422
     assert second_response.json()["detail"] == (
-        "Requested version number does not match the next version."
+        "Requested version change is a possible conflict."
     )
-
 
 def test_list_document_versions_returns_descending_versions(
     client: TestClient,

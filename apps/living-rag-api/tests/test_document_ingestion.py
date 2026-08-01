@@ -3,10 +3,16 @@ from datetime import datetime
 import pytest
 from sqlalchemy import func, select
 
-from app.models.document import Document, DocumentSourceType, DocumentVersion
+from app.models.document import (
+    Document,
+    DocumentGovernanceStatus,
+    DocumentSourceType,
+    DocumentVersion,
+)
 from app.models.document_chunk import DocumentChunk
 from app.services.document_ingestion import (
     DocumentIngestionService,
+    VersionChangeType,
     compute_content_hash,
     split_into_chunks,
     split_into_paragraphs,
@@ -231,6 +237,142 @@ def test_find_latest_version_returns_none_for_new_document(
     assert service.find_latest_version(document.id) is None
 
 
+def test_classify_version_change_returns_new_for_document_without_versions(
+    db_session,
+) -> None:
+    """没有历史版本时，应识别为新增文档版本。"""
+
+    document = Document(
+        title="退款政策",
+        policy_key="CLASSIFY-NEW-POLICY",
+        domain="refund",
+    )
+    db_session.add(document)
+    db_session.flush()
+
+    service = DocumentIngestionService(db_session)
+
+    change_type = service.classify_version_change(
+        document_id=document.id,
+        requested_version_number=1,
+        content_hash=compute_content_hash("第一版退款政策内容"),
+    )
+
+    assert change_type is VersionChangeType.NEW
+
+
+def test_classify_version_change_returns_duplicate_for_same_content(
+    db_session,
+) -> None:
+    """已有相同内容时，应识别为重复版本。"""
+
+    document = Document(
+        title="退款政策",
+        policy_key="CLASSIFY-DUPLICATE-POLICY",
+        domain="refund",
+    )
+    db_session.add(document)
+    db_session.flush()
+
+    existing_content = "第一版退款政策内容"
+    existing_hash = compute_content_hash(existing_content)
+
+    version = DocumentVersion(
+        document=document,
+        version_number=1,
+        content=existing_content,
+        content_hash=existing_hash,
+    )
+    db_session.add(version)
+    db_session.flush()
+
+    service = DocumentIngestionService(db_session)
+
+    change_type = service.classify_version_change(
+        document_id=document.id,
+        requested_version_number=2,
+        content_hash=existing_hash,
+    )
+
+    assert change_type is VersionChangeType.DUPLICATE
+
+
+def test_classify_version_change_returns_update_for_next_version(
+    db_session,
+) -> None:
+    """内容发生变化且版本号连续时，应识别为正常更新。"""
+
+    document = Document(
+        title="退款政策",
+        policy_key="CLASSIFY-UPDATE-POLICY",
+        domain="refund",
+    )
+    db_session.add(document)
+    db_session.flush()
+
+    first_content = "第一版退款政策内容"
+    first_hash = compute_content_hash(first_content)
+
+    first_version = DocumentVersion(
+        document=document,
+        version_number=1,
+        content=first_content,
+        content_hash=first_hash,
+    )
+    db_session.add(first_version)
+    db_session.flush()
+
+    service = DocumentIngestionService(db_session)
+
+    second_content = "第二版退款政策内容，退款期限已经更新"
+    second_hash = compute_content_hash(second_content)
+
+    change_type = service.classify_version_change(
+        document_id=document.id,
+        requested_version_number=2,
+        content_hash=second_hash,
+    )
+
+    assert change_type is VersionChangeType.UPDATE
+
+
+def test_classify_version_change_returns_conflict_for_non_sequential_version(
+    db_session,
+) -> None:
+    """版本号不连续时，应识别为疑似冲突。"""
+
+    document = Document(
+        title="退款政策",
+        policy_key="CLASSIFY-CONFLICT-POLICY",
+        domain="refund",
+    )
+    db_session.add(document)
+    db_session.flush()
+
+    first_content = "第一版退款政策内容"
+    first_version = DocumentVersion(
+        document=document,
+        version_number=1,
+        content=first_content,
+        content_hash=compute_content_hash(first_content),
+    )
+    db_session.add(first_version)
+    db_session.flush()
+
+    service = DocumentIngestionService(db_session)
+
+    second_content = "第三版退款政策内容，跳过了第二版"
+    second_hash = compute_content_hash(second_content)
+
+    change_type = service.classify_version_change(
+        document_id=document.id,
+        requested_version_number=3,
+        content_hash=second_hash,
+    )
+
+    assert change_type is VersionChangeType.POSSIBLE_CONFLICT
+    
+
 def test_find_latest_version_returns_highest_version(
     db_session,
 ) -> None:
@@ -349,7 +491,8 @@ def test_create_document_version_links_to_previous_version(
     assert second_version.original_filename == "refund_policy_v2.md"
     assert second_version.content_type == TEST_CONTENT_TYPE
     assert second_version.supersedes_version_id == first_version.id
-
+    assert first_version.governance_status is DocumentGovernanceStatus.SUPERSEDED
+    
 
 def test_split_into_paragraphs_preserves_headings_and_paragraphs() -> None:
     content = (
@@ -594,7 +737,7 @@ def test_ingest_content_rejects_non_sequential_version_number(
 
     with pytest.raises(
         ValueError,
-        match="Requested version number does not match the next version.",
+        match="Requested version change is a possible conflict.",
     ):
         service.ingest_content(
             document=document,
@@ -658,3 +801,49 @@ def test_list_document_versions_returns_empty_for_unknown_policy(
     versions = service.list_document_versions("UNKNOWN-POLICY")
 
     assert versions == []
+
+
+def test_ingest_content_supersedes_previous_version(
+    db_session,
+) -> None:
+    """通过完整导入流程创建新版本时，旧版本应被标记为已替代。"""
+
+    document = Document(
+        title="退款政策",
+        policy_key="INGEST-SUPERSEDE-POLICY",
+        domain="refund",
+    )
+    db_session.add(document)
+    db_session.flush()
+
+    service = DocumentIngestionService(db_session)
+
+    first_content = "第一版退款政策内容"
+    first_version = service.ingest_content(
+        document=document,
+        content=first_content,
+        requested_version_number=1,
+        source_type=TEST_SOURCE_TYPE,
+        effective_at=TEST_EFFECTIVE_AT,
+        expires_at=TEST_EXPIRES_AT,
+        original_filename="refund_policy_v1.md",
+        content_type=TEST_CONTENT_TYPE,
+    )
+
+    second_content = "第二版退款政策内容，退款期限已经更新"
+    second_version = service.ingest_content(
+        document=document,
+        content=second_content,
+        requested_version_number=2,
+        source_type=TEST_SOURCE_TYPE,
+        effective_at=TEST_EFFECTIVE_AT,
+        expires_at=TEST_EXPIRES_AT,
+        original_filename="refund_policy_v2.md",
+        content_type=TEST_CONTENT_TYPE,
+    )
+
+    assert first_version.version_number == 1
+    assert second_version.version_number == 2
+    assert second_version.supersedes_version_id == first_version.id
+    assert first_version.governance_status is DocumentGovernanceStatus.SUPERSEDED
+    assert second_version.governance_status is DocumentGovernanceStatus.ACTIVE

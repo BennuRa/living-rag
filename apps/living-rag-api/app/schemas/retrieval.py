@@ -46,3 +46,4 @@ class RetrievalSearchRequest(BaseModel):
         ge=1,
         le=20,
     )
+    as_of_date: datetime | None = None

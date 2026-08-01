@@ -2,8 +2,8 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import case, literal, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import case, func, literal, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from app.models.document import (
     Document,
@@ -17,19 +17,20 @@ from app.models.document_chunk import DocumentChunk
 
 def _preferred_policy_keys(query_text: str) -> tuple[str, ...]:
     """根据用户问题识别当前检索的优先政策领域。"""
+
     normalized_query = query_text.strip().lower()
 
     refund_keywords = (
         "退款",
         "退货",
-        "退费",
+        "退钱",
+        "退款政策",
         "退款时限",
         "退款期限",
-        "退款政策",
         "申请退款",
-        "签收后多久",
-        "免费退货",
-        "运费",
+        "签收后退款",
+        "退货运费",
+        "运费谁承担",
         "refund",
         "return",
         "refund policy",
@@ -39,12 +40,13 @@ def _preferred_policy_keys(query_text: str) -> tuple[str, ...]:
         "配送",
         "物流",
         "发货",
+        "快递",
         "运输",
-        "延迟",
         "送达",
+        "配送政策",
+        "物流延迟",
         "delivery",
         "shipping",
-        "物流政策",
     )
 
     membership_keywords = (
@@ -52,9 +54,10 @@ def _preferred_policy_keys(query_text: str) -> tuple[str, ...]:
         "会员权益",
         "会员等级",
         "普通会员",
-        "银卡",
-        "金卡",
-        "铂金",
+        "银卡会员",
+        "金卡会员",
+        "铂金会员",
+        "黑金会员",
         "membership",
         "membership benefit",
     )
@@ -86,41 +89,109 @@ def search_similar_chunks(
     query_text: str = "",
     limit: int = 5,
     now: datetime | None = None,
+    as_of_date: datetime | None = None,
 ) -> list[tuple[DocumentChunk, DocumentVersion, Document, float]]:
-    """查询当前有效版本中最相似的文档 Chunk。
+    """查询当前或指定历史日期下有效的文档 Chunk。
 
-    检索排序顺序：
+    默认情况下，检索当前有效版本：
 
-    1. 与问题所属政策领域匹配的文档；
-    2. 正式政策；
-    3. 临时公告；
-    4. FAQ；
-    5. 运营通知及其他来源；
-    6. 向量余弦距离。
+    - 文档 Chunk 必须存在 embedding；
+    - 文档版本技术状态必须为 READY；
+    - 文档治理状态必须为 ACTIVE；
+    - effective_at 不得晚于当前时间；
+    - expires_at 为空或晚于当前时间。
 
-    这样可以避免“会员权益正式政策”因为 source_type 更权威，
-    反而压过“退款政策正式政策”的问题。
+    当传入 as_of_date 时，执行历史版本查询：
+
+    - 文档版本技术状态必须为 READY；
+    - 文档治理状态允许为 ACTIVE 或 SUPERSEDED；
+    - effective_at 不得晚于指定日期；
+    - expires_at 为空或晚于指定日期；
+    - 同一逻辑文档只选择指定日期下版本号最高的有效版本。
 
     Args:
         db: 当前数据库会话。
-        query_embedding: 用户问题对应的查询向量。
+        query_embedding: 用户问题对应的查询向量，必须是 768 维。
         query_text: 用户原始问题，用于识别优先政策领域。
         limit: 最多返回的 Chunk 数量。
-        now: 用于判断版本有效期的时间。未传入时使用当前 UTC 时间。
+        now: 当前查询使用的时间。未传入时使用当前 UTC 时间。
+        as_of_date: 可选的历史查询日期。传入后会查询该日期有效的历史版本。
 
     Returns:
-        按政策领域、来源优先级和余弦距离排列的检索结果。
-        每条结果依次包含 DocumentChunk、DocumentVersion、Document
-        和余弦距离。
+        按政策优先级、来源类型和余弦距离排序的检索结果。
+        每条结果依次包含：
+
+        - DocumentChunk；
+        - DocumentVersion；
+        - Document；
+        - 余弦距离。
 
     Raises:
         ValueError: 当 limit 不是正整数时抛出。
     """
+
     if limit <= 0:
         raise ValueError("limit must be greater than zero.")
 
     if now is None:
         now = datetime.now(UTC)
+
+    reference_time = (
+        as_of_date
+        if as_of_date is not None
+        else now
+    )
+
+    if as_of_date is None:
+        governance_status_condition = (
+            DocumentVersion.governance_status
+            == DocumentGovernanceStatus.ACTIVE
+        )
+    else:
+        governance_status_condition = (
+            DocumentVersion.governance_status.in_(
+                (
+                    DocumentGovernanceStatus.ACTIVE,
+                    DocumentGovernanceStatus.SUPERSEDED,
+                ),
+            )
+        )
+
+    historical_version = aliased(DocumentVersion)
+
+    latest_historical_version_number = (
+        select(func.max(historical_version.version_number))
+        .where(
+            historical_version.document_id
+            == DocumentVersion.document_id,
+        )
+        .where(
+            historical_version.status
+            == DocumentVersionStatus.READY,
+        )
+        .where(
+            historical_version.governance_status.in_(
+                (
+                    DocumentGovernanceStatus.ACTIVE,
+                    DocumentGovernanceStatus.SUPERSEDED,
+                ),
+            ),
+        )
+        .where(
+            or_(
+                historical_version.effective_at.is_(None),
+                historical_version.effective_at <= reference_time,
+            ),
+        )
+        .where(
+            or_(
+                historical_version.expires_at.is_(None),
+                historical_version.expires_at > reference_time,
+            ),
+        )
+        .correlate(DocumentVersion)
+        .scalar_subquery()
+    )
 
     preferred_policy_keys = _preferred_policy_keys(query_text)
 
@@ -185,21 +256,30 @@ def search_similar_chunks(
             DocumentVersion.status == DocumentVersionStatus.READY,
         )
         .where(
-            DocumentVersion.governance_status
-            == DocumentGovernanceStatus.ACTIVE,
+            governance_status_condition,
         )
         .where(
             or_(
                 DocumentVersion.effective_at.is_(None),
-                DocumentVersion.effective_at <= now,
+                DocumentVersion.effective_at <= reference_time,
             ),
         )
         .where(
             or_(
                 DocumentVersion.expires_at.is_(None),
-                DocumentVersion.expires_at > now,
+                DocumentVersion.expires_at > reference_time,
             ),
         )
+    )
+
+    if as_of_date is not None:
+        statement = statement.where(
+            DocumentVersion.version_number
+            == latest_historical_version_number,
+        )
+
+    statement = (
+        statement
         .order_by(
             policy_priority.asc(),
             source_priority.asc(),

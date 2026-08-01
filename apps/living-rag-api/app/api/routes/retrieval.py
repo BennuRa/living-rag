@@ -38,6 +38,7 @@ def search_retrieval(
         query_embedding,
         query_text=request.query,
         limit=request.limit,
+        as_of_date=request.as_of_date,
     )
 
     return [
