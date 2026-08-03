@@ -42,6 +42,12 @@ from app.models.refund_request import (
 )
 from app.models.tool_call import ToolCall, ToolCallStatus
 from app.models.user import User, UserStatus
+from app.models.policy_conflict import (
+    ConflictEvidence,
+    PolicyConflict,
+    PolicyConflictStatus,
+)
+
 
 __all__ = [
     "AgentNodeRun",
@@ -76,4 +82,7 @@ __all__ = [
     "ToolCallStatus",
     "User",
     "UserStatus",
+    "ConflictEvidence",
+    "PolicyConflict",
+    "PolicyConflictStatus",
 ]

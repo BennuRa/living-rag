@@ -117,6 +117,33 @@ Gold and platinum members receive the same benefit for designated products.
     assert len(free_return_rules) == 1
 
 
+def test_extract_policy_rules_supports_v1_prose_membership_rule() -> None:
+    """Extract one shared window from the v1 prose policy statement."""
+
+    content = (
+        "standard\u3001silver\u3001gold \u548c platinum "
+        "\u4f1a\u5458\u5747\u9002\u7528 7 \u4e2a\u81ea\u7136\u65e5"
+        "\u7684\u9000\u6b3e\u7533\u8bf7\u671f\u9650\u3002"
+    )
+
+    document_version = make_document_version(content)
+
+    rules = extract_policy_rules(document_version)
+
+    window_rules = {
+        rule.conditions["membership_tier"]: rule.value
+        for rule in rules
+        if rule.rule_key is PolicyRuleKey.REFUND_WINDOW_DAYS
+    }
+
+    assert window_rules == {
+        "standard": 7,
+        "silver": 7,
+        "gold": 7,
+        "platinum": 7,
+    }
+
+
 def test_extract_policy_rules_rejects_content_without_membership_window_table(
 ) -> None:
     """Missing membership-window evidence must fail explicitly."""
