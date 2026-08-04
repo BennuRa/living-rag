@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -19,6 +20,10 @@ from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+
+if TYPE_CHECKING:
+    from app.models.policy_rule import PolicyRule
 
 
 class PolicyConflictStatus(StrEnum):
@@ -89,6 +94,14 @@ class PolicyConflict(Base):
             ondelete="SET NULL",
         ),
         nullable=True,
+    )
+
+    left_rule: Mapped["PolicyRule | None"] = relationship(
+        foreign_keys=[left_rule_id],
+    )
+
+    right_rule: Mapped["PolicyRule | None"] = relationship(
+        foreign_keys=[right_rule_id],
     )
 
     left_document_version_id: Mapped[UUID] = mapped_column(

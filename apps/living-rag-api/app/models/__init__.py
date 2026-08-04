@@ -47,6 +47,12 @@ from app.models.policy_conflict import (
     PolicyConflict,
     PolicyConflictStatus,
 )
+from app.models.review_task import (
+    ReviewDecision,
+    ReviewTask,
+    ReviewTaskStatus,
+    ReviewTaskType,
+)
 
 
 __all__ = [
@@ -85,4 +91,8 @@ __all__ = [
     "ConflictEvidence",
     "PolicyConflict",
     "PolicyConflictStatus",
+    "ReviewDecision",
+    "ReviewTask",
+    "ReviewTaskStatus",
+    "ReviewTaskType",
 ]

@@ -11,6 +11,9 @@ from app.api.routes.qa import (
 )
 from app.api.routes.retrieval import router as retrieval_router
 from app.core.config import get_settings
+from app.api.routes.review_tasks import (
+    router as review_tasks_router,
+)
 
 
 @asynccontextmanager
@@ -38,3 +41,4 @@ app.include_router(documents_router)
 app.include_router(retrieval_router)
 app.include_router(qa_router)
 app.include_router(chat_router)
+app.include_router(review_tasks_router)

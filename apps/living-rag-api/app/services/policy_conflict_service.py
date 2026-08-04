@@ -7,13 +7,16 @@ from app.models.policy_conflict import (
     PolicyConflict,
 )
 from app.schemas.policy_comparison import PolicyRuleComparison
+from app.services.review_task_service import (
+    create_review_tasks_for_open_conflicts,
+)
 
 
 def persist_policy_comparison(
     db: Session,
     comparison: PolicyRuleComparison,
 ) -> PolicyConflict:
-    """Persist one policy comparison and its original evidences."""
+    """Persist one policy comparison and create review tasks when needed."""
 
     conflict = PolicyConflict(
         kind=comparison.kind.value,
@@ -40,13 +43,19 @@ def persist_policy_comparison(
 
         if is_right_only_update:
             evidence_rule_id = comparison.right_rule_id
-            evidence_version_id = comparison.right_document_version_id
+            evidence_version_id = (
+                comparison.right_document_version_id
+            )
         elif position == 0:
             evidence_rule_id = comparison.left_rule_id
-            evidence_version_id = comparison.left_document_version_id
+            evidence_version_id = (
+                comparison.left_document_version_id
+            )
         else:
             evidence_rule_id = comparison.right_rule_id
-            evidence_version_id = comparison.right_document_version_id
+            evidence_version_id = (
+                comparison.right_document_version_id
+            )
 
         evidence_rows.append(
             ConflictEvidence(
@@ -61,6 +70,8 @@ def persist_policy_comparison(
     db.add_all(evidence_rows)
     db.flush()
 
+    create_review_tasks_for_open_conflicts(db)
+
     return conflict
 
 
@@ -68,7 +79,7 @@ def persist_policy_comparisons(
     db: Session,
     comparisons: list[PolicyRuleComparison],
 ) -> list[PolicyConflict]:
-    """Persist multiple policy comparison results."""
+    """Persist multiple comparisons and create review tasks."""
 
     persisted_conflicts: list[PolicyConflict] = []
 
