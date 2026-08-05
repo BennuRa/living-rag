@@ -234,7 +234,15 @@ def search_similar_chunks(
         else_=3,
     ).label("source_priority")
 
-    statement = (
+    # Fetch a larger candidate pool for refund queries. Official policy keeps
+    # display priority, but conflict governance also needs a relevant FAQ
+    # candidate to survive the final result limit.
+    candidate_limit = limit
+
+    if "REFUND-FAQ-001" in preferred_policy_keys:
+        candidate_limit = max(limit * 3, limit)
+
+    base_statement = (
         select(
             DocumentChunk,
             DocumentVersion,
@@ -273,22 +281,60 @@ def search_similar_chunks(
     )
 
     if as_of_date is not None:
-        statement = statement.where(
+        base_statement = base_statement.where(
             DocumentVersion.version_number
             == latest_historical_version_number,
         )
 
     statement = (
-        statement
+        base_statement
         .order_by(
             policy_priority.asc(),
             source_priority.asc(),
             distance.asc(),
         )
-        .limit(limit)
+        .limit(candidate_limit)
     )
 
     rows = db.execute(statement).all()
+
+    if "REFUND-FAQ-001" in preferred_policy_keys:
+        faq_statement = (
+            base_statement
+            .where(
+                DocumentVersion.source_type == DocumentSourceType.FAQ,
+            )
+            .order_by(distance.asc())
+            .limit(1)
+        )
+        faq_row = db.execute(faq_statement).first()
+
+        if faq_row is not None:
+            rows.append(faq_row)
+
+        faq_row = next(
+            (
+                row
+                for row in rows
+                if row[1].source_type == DocumentSourceType.FAQ
+            ),
+            None,
+        )
+
+        has_faq = any(
+            row[1].source_type == DocumentSourceType.FAQ
+            for row in rows[:limit]
+        )
+
+        if faq_row is not None and not has_faq:
+            rows = [
+                *rows[: max(limit - 1, 0)],
+                faq_row,
+            ]
+        else:
+            rows = rows[:limit]
+    else:
+        rows = rows[:limit]
 
     return [
         (

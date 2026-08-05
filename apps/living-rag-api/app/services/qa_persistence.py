@@ -126,6 +126,18 @@ def save_qa_run(
                 "confidence": state.get("confidence", 0.0),
                 "limitations": state.get("limitations", []),
                 "citation_valid": state.get("citation_valid", False),
+                "conflict_summaries": state.get(
+                    "conflict_summaries",
+                    [],
+                ),
+                "conflict_blocking": state.get(
+                    "conflict_blocking",
+                    False,
+                ),
+                "conflict_notice": state.get(
+                    "conflict_notice",
+                    "",
+                ),
             },
         )
         db.add(assistant_message)
@@ -167,6 +179,10 @@ def save_qa_run(
                 "confidence": state.get(
                     "confidence",
                     0.0,
+                ),
+                "conflict_blocking": state.get(
+                    "conflict_blocking",
+                    False,
                 ),
             },
         )

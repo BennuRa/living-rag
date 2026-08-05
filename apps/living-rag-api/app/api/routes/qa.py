@@ -141,6 +141,18 @@ def _run_question_answer(
             "limitations",
             [],
         ),
+        conflict_summaries=result.get(
+            "conflict_summaries",
+            [],
+        ),
+        conflict_blocking=result.get(
+            "conflict_blocking",
+            False,
+        ),
+        conflict_notice=result.get(
+            "conflict_notice",
+            "",
+        ),
     )
 
 

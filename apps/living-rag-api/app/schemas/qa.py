@@ -55,3 +55,6 @@ class QuestionAnswerResponse(BaseModel):
         le=1.0,
     )
     limitations: list[str] = Field(default_factory=list)
+    conflict_summaries: list[str] = Field(default_factory=list)
+    conflict_blocking: bool = False
+    conflict_notice: str = ""

@@ -124,3 +124,66 @@ def test_search_similar_chunks_uses_correct_version_for_current_and_history(
     assert [result[1].id for result in february_results] == [version_1.id]
     assert [result[1].id for result in may_results] == [version_2.id]
     assert [result[1].id for result in august_results] == [version_3.id]
+
+
+def test_refund_retrieval_keeps_a_relevant_faq_for_conflict_governance(
+    db_session,
+) -> None:
+    """Refund retrieval keeps an FAQ candidate alongside official policy."""
+
+    official_document = Document(
+        title="Official refund policy",
+        policy_key="REFUND-POLICY",
+    )
+    faq_document = Document(
+        title="Refund FAQ",
+        policy_key="REFUND-FAQ-001",
+    )
+    db_session.add_all([official_document, faq_document])
+    db_session.flush()
+
+    official_version = _create_version_with_chunk(
+        db_session=db_session,
+        document=official_document,
+        version_number=3,
+        effective_at=datetime(2025, 7, 1, tzinfo=UTC),
+        governance_status=DocumentGovernanceStatus.ACTIVE,
+    )
+
+    faq_content = "FAQ: all members may request a refund within 30 days."
+    faq_version = DocumentVersion(
+        document=faq_document,
+        version_number=1,
+        status=DocumentVersionStatus.READY,
+        source_type=DocumentSourceType.FAQ,
+        governance_status=DocumentGovernanceStatus.ACTIVE,
+        effective_at=datetime(2025, 7, 5, tzinfo=UTC),
+        content=faq_content,
+        content_hash=compute_content_hash(faq_content),
+    )
+    db_session.add(faq_version)
+    db_session.flush()
+
+    db_session.add(
+        DocumentChunk(
+            document_version=faq_version,
+            chunk_index=0,
+            content=faq_content,
+            content_hash=compute_content_hash(faq_content),
+            embedding=TEST_EMBEDDING,
+        ),
+    )
+    db_session.flush()
+
+    results = search_similar_chunks(
+        db_session,
+        TEST_EMBEDDING,
+        query_text="所有会员可以在 30 天内退款吗？",
+        limit=2,
+        now=datetime(2025, 8, 1, tzinfo=UTC),
+    )
+
+    result_version_ids = {row[1].id for row in results}
+
+    assert official_version.id in result_version_ids
+    assert faq_version.id in result_version_ids

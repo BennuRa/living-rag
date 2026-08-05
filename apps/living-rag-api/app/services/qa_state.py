@@ -39,5 +39,9 @@ class LivingRAGState(TypedDict, total=False):
     citation_valid: bool
     error: str | None
 
+    conflict_summaries: list[str]
+    conflict_blocking: bool
+    conflict_notice: str
+
 
 QAState = LivingRAGState

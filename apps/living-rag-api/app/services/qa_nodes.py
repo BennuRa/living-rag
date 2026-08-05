@@ -2,9 +2,11 @@
 
 from datetime import UTC, datetime
 
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.document import DocumentGovernanceStatus
+from app.models.policy_conflict import PolicyConflict, PolicyConflictStatus
 from app.schemas.retrieval import RetrievalResult
 from app.services.citation_validation import (
     build_citations_from_answer,
@@ -271,6 +273,51 @@ def generate_answer_node(
     }
 
 
+def safe_conflict_response_node(
+    state: LivingRAGState,
+) -> dict[str, object]:
+    """Return a conservative answer when an open conflict blocks a conclusion."""
+
+    graded_results = state.get("graded_results", [])
+    conflict_notice = state.get("conflict_notice", "")
+    conflict_summaries = state.get("conflict_summaries", [])
+
+    answer = conflict_notice or (
+        "当前政策证据存在尚未解决的冲突，"
+        "暂时无法给出单一确定结论。"
+    )
+
+    if conflict_summaries:
+        answer = (
+            f"{answer} "
+            f"冲突摘要：{'：'.join(conflict_summaries)}"
+        )
+
+    # 安全回答仍然要经过原有 citation validation 节点。
+    # 因此这里把当前 graded_results 的编号全部交给引用校验。
+    citation_indices = list(
+        range(1, len(graded_results) + 1)
+    )
+
+    if citation_indices:
+        answer = (
+            f"{answer} "
+            f"{' '.join(f'[{index}]' for index in citation_indices)}"
+        )
+
+    return {
+        "answer": answer,
+        "conditions": [
+            "最终政策结论需要人工审核确认。",
+        ],
+        "citation_indices": citation_indices,
+        "confidence": 0.0,
+        "limitations": [
+            "存在未决政策冲突，系统未对冲突来源进行单方面裁定。",
+        ],
+    }
+
+
 def validate_citations_node(
     state: LivingRAGState,
 ) -> dict[str, object]:
@@ -303,4 +350,86 @@ def validate_citations_node(
     return {
         "citation_valid": citation_valid,
         "citations": citations,
+    }
+
+
+def check_conflicts_node(
+    state: LivingRAGState,
+    db: Session,
+) -> dict[str, object]:
+    """Find open conflicts that affect the evidence used for this question."""
+
+    graded_results = state.get("graded_results", [])
+
+    # 没有经过筛选的有效证据时，不把“没有证据”误判成“存在冲突”。
+    if not graded_results:
+        return {
+            "conflict_summaries": [],
+            "conflict_blocking": False,
+            "conflict_notice": "",
+        }
+
+    # 当前问答真正使用的是 graded_results 中的文档版本。
+    version_ids = {
+        result.document_version_id
+        for result in graded_results
+    }
+
+    # 只查询：
+    # 1. 与当前证据版本有关的冲突；
+    # 2. 仍然处于 open 状态的冲突。
+    statement = select(PolicyConflict).where(
+        PolicyConflict.status == PolicyConflictStatus.OPEN.value,
+        or_(
+            PolicyConflict.left_document_version_id.in_(version_ids),
+            PolicyConflict.right_document_version_id.in_(version_ids),
+        ),
+    )
+
+    conflicts = list(db.scalars(statement).all())
+
+    # Day 12 的阻断规则：
+    # - conflict：真正的规则冲突，需要阻断；
+    # - high_risk_error：高风险错误，需要阻断；
+    # - historical_difference：历史差异，不阻断；
+    # - update：正常版本更新，不阻断；
+    # - conditional_exception：条件性例外，不在这里直接阻断。
+    relevant_conflicts = [
+        conflict
+        for conflict in conflicts
+        if conflict.kind in {
+            "conflict",
+            "high_risk_error",
+        }
+    ]
+
+    if not relevant_conflicts:
+        return {
+            "conflict_summaries": [],
+            "conflict_blocking": False,
+            "conflict_notice": "",
+        }
+
+    # 当前 State 中 conflict_summaries 的类型是 list[str]，
+    # 所以这里先把数据库冲突转换为可读摘要。
+    summaries = [
+        (
+            f"{conflict.kind} "
+            f"({conflict.severity}) "
+            f"for {conflict.rule_key}: "
+            f"{conflict.reason}"
+        )
+        for conflict in relevant_conflicts
+    ]
+
+    notice = (
+        "当前检索到的有效证据之间存在尚未完成人工审核的政策冲突。"
+        "系统不会在冲突未决时擅自选择单一政策结论。"
+        "相关来源和证据已保留，建议提交人工审核。"
+    )
+
+    return {
+        "conflict_summaries": summaries,
+        "conflict_blocking": True,
+        "conflict_notice": notice,
     }
