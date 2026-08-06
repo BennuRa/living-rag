@@ -53,6 +53,12 @@ from app.models.review_task import (
     ReviewTaskStatus,
     ReviewTaskType,
 )
+from app.models.approval_task import (
+    ApprovalDecision,
+    ApprovalTask,
+    ApprovalTaskStatus,
+    ApprovalTaskType,
+)
 
 
 __all__ = [
@@ -60,6 +66,10 @@ __all__ = [
     "AgentNodeRunStatus",
     "AgentRun",
     "AgentRunStatus",
+    "ApprovalDecision",
+    "ApprovalTask",
+    "ApprovalTaskStatus",
+    "ApprovalTaskType",
     "AuditActorType",
     "AuditLog",
     "AuditResult",
