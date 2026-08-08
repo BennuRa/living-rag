@@ -16,11 +16,16 @@ from app.api.routes.documents import router as documents_router
 from app.api.routes.health import router as health_router
 from app.api.routes.qa import (
     chat_router,
+)
+from app.api.routes.qa import (
     router as qa_router,
 )
 from app.api.routes.retrieval import router as retrieval_router
 from app.api.routes.review_tasks import (
     router as review_tasks_router,
+)
+from app.api.routes.runs import (
+    router as runs_router,
 )
 from app.core.config import get_settings
 
@@ -60,3 +65,4 @@ app.include_router(review_tasks_router)
 app.include_router(approval_tasks_router)
 app.include_router(business_actions_router)
 app.include_router(audit_logs_router)
+app.include_router(runs_router)
