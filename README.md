@@ -462,7 +462,7 @@ E:\Living RAG\docs\living-rag-demo-script.md
 - Day 1 到 Day 14：Living RAG 核心 MVP 已完成；
 - Day 15：Trace、日志和运行详情已完成；
 - Day 16：共享任务协议、任务加载器和 71 条结构化任务已完成；
-- Day 17：Docker、README 和演示脚本正在交付；
+- Day 17：Docker、README 和演示脚本已完成；
 - Day 18 之后：开始 Agent Reliability Lab。
 
 ## 相关文档

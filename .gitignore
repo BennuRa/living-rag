@@ -17,6 +17,7 @@ out/
 
 # Generated runtime files
 *.log
+outputs/
 data/
 
 # Editor and OS files
