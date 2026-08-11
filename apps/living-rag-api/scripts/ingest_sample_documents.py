@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import re
 import sys
+from datetime import UTC, datetime
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,11 +31,15 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.core.database import SessionLocal
 from app.models.document import (
     Document,
+    DocumentGovernanceStatus,
+    DocumentSourceType,
     DocumentStatus,
     DocumentVersion,
     DocumentVersionStatus,
 )
 from app.models.document_chunk import DocumentChunk
+from app.services.embedding_factory import create_embedding_provider
+from app.services.embedding_service import embed_pending_chunks
 
 
 DATA_DIRECTORY = Path("/data/sample_documents")
@@ -69,6 +74,15 @@ SOURCE_DOCUMENT_STATUSES = {
     "active",
     "archived",
     "invalid",
+}
+
+SOURCE_TYPE_BY_DOCUMENT_TYPE = {
+    "正式政策": DocumentSourceType.OFFICIAL_POLICY,
+    "临时活动公告": DocumentSourceType.TEMPORARY_NOTICE,
+    "临时公告": DocumentSourceType.TEMPORARY_NOTICE,
+    "FAQ": DocumentSourceType.FAQ,
+    "错误公告": DocumentSourceType.OPERATION_NOTICE,
+    "运营通知": DocumentSourceType.OPERATION_NOTICE,
 }
 
 
@@ -143,6 +157,46 @@ def normalize_optional_value(value: str | None) -> str | None:
         return None
 
     return normalized_value
+
+
+def parse_optional_datetime(value: str | None, source_file: str) -> datetime | None:
+    """Parse an ISO date and normalize date-only values to UTC midnight."""
+
+    normalized = normalize_optional_value(value)
+    if normalized is None:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise fail(source_file, f"invalid ISO date value: {normalized!r}") from exc
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+
+    return parsed
+
+
+def source_type_for(source: SourceDocument) -> DocumentSourceType:
+    """Map sample metadata to the persisted source-type enum."""
+
+    try:
+        return SOURCE_TYPE_BY_DOCUMENT_TYPE[source.document_type]
+    except KeyError as exc:
+        raise fail(
+            source.source_file,
+            f"unsupported document type {source.document_type!r}",
+        ) from exc
+
+
+def governance_status_for(source: SourceDocument) -> DocumentGovernanceStatus:
+    """Map source lifecycle metadata to the initial governance state."""
+
+    return {
+        "active": DocumentGovernanceStatus.ACTIVE,
+        "archived": DocumentGovernanceStatus.SUPERSEDED,
+        "invalid": DocumentGovernanceStatus.INVALID,
+    }[source.source_document_status]
 
 
 def require_metadata(
@@ -608,6 +662,7 @@ def upsert_documents(
         if document is None:
             document = Document(
                 title=logical_title,
+                policy_key=document_key,
                 status=target_document_status(sources, document_key),
                 metadata_=build_document_metadata(sources, document_key),
             )
@@ -615,6 +670,7 @@ def upsert_documents(
             stats.documents_created += 1
         else:
             document.title = logical_title
+            document.policy_key = document_key
             document.status = target_document_status(sources, document_key)
             document.metadata_ = build_document_metadata(sources, document_key)
             stats.documents_updated += 1
@@ -659,6 +715,17 @@ def ingest_document_versions(
                 source.chunks,
                 source.source_file,
             )
+            existing_version.source_type = source_type_for(source)
+            existing_version.governance_status = governance_status_for(source)
+            existing_version.effective_at = parse_optional_datetime(
+                source.effective_at,
+                source.source_file,
+            )
+            existing_version.expires_at = parse_optional_datetime(
+                source.expires_at,
+                source.source_file,
+            )
+            existing_version.metadata_ = build_version_metadata(source)
             stats.versions_unchanged += 1
             stats.chunks_unchanged += len(source.chunks)
             continue
@@ -667,6 +734,16 @@ def ingest_document_versions(
             document_id=document.id,
             version_number=source.version_number,
             status=DocumentVersionStatus.READY,
+            source_type=source_type_for(source),
+            governance_status=governance_status_for(source),
+            effective_at=parse_optional_datetime(
+                source.effective_at,
+                source.source_file,
+            ),
+            expires_at=parse_optional_datetime(
+                source.expires_at,
+                source.source_file,
+            ),
             content=source.content,
             content_hash=source.content_hash,
             metadata_=build_version_metadata(source),
@@ -689,6 +766,19 @@ def ingest_document_versions(
 
         stats.versions_created += 1
         stats.chunks_created += len(source.chunks)
+
+    session.flush()
+
+    # Link adjacent immutable versions for every logical document.
+    for document in documents_by_key.values():
+        versions = session.scalars(
+            select(DocumentVersion)
+            .where(DocumentVersion.document_id == document.id)
+            .order_by(DocumentVersion.version_number)
+        ).all()
+
+        for previous, current in zip(versions, versions[1:]):
+            current.supersedes_version_id = previous.id
 
     session.flush()
 
@@ -722,6 +812,10 @@ def main() -> None:
             with session.begin():
                 documents_by_key = upsert_documents(session, sources, stats)
                 ingest_document_versions(session, sources, documents_by_key, stats)
+                embedded_count = embed_pending_chunks(
+                    session,
+                    create_embedding_provider(),
+                )
     except Exception:
         print(
             "Document ingestion failed. The database transaction was rolled back.",
@@ -731,6 +825,7 @@ def main() -> None:
 
     print("Document ingestion completed successfully.")
     print_stats(stats)
+    print(f"embeddings: created={embedded_count}")
 
 
 if __name__ == "__main__":

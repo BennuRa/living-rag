@@ -27,6 +27,7 @@ from app.api.routes.review_tasks import (
 from app.api.routes.runs import (
     router as runs_router,
 )
+from app.api.routes.users import router as users_router
 from app.core.config import get_settings
 
 
@@ -66,3 +67,4 @@ app.include_router(approval_tasks_router)
 app.include_router(business_actions_router)
 app.include_router(audit_logs_router)
 app.include_router(runs_router)
+app.include_router(users_router)

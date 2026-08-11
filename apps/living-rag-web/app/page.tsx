@@ -59,10 +59,14 @@ type ChatResponse = {
   limitations: string[];
 };
 
+type DemoUser = {
+  id: string;
+  external_id: string;
+  display_name: string;
+};
+
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-
-const defaultUserId = "c07f7289-d5d5-4798-a5cb-9cabcdf0c74b";
 
 const statusLabels: Record<ApiStatus, string> = {
   checking: "正在检查后端服务",
@@ -88,7 +92,8 @@ export default function Home() {
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
 
   const [question, setQuestion] = useState("");
-  const [userId, setUserId] = useState(defaultUserId);
+  const [userId, setUserId] = useState("");
+  const [users, setUsers] = useState<DemoUser[]>([]);
   const [limit, setLimit] = useState(5);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -126,6 +131,41 @@ export default function Home() {
     }
 
     void checkApiHealth();
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadUsers() {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/users`, {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error(`样例用户加载失败：${response.status}`);
+        }
+
+        const payload = (await response.json()) as DemoUser[];
+        setUsers(payload);
+        if (payload.length > 0) {
+          setUserId((current) => current || payload[0].id);
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        setErrorMessage("样例用户加载失败，请确认已经运行 Seed 脚本。");
+      }
+    }
+
+    void loadUsers();
 
     return () => {
       controller.abort();
@@ -258,15 +298,29 @@ export default function Home() {
         </div>
 
         <form className="question-form" onSubmit={handleSubmit}>
-          <label htmlFor="user-id">用户 ID</label>
+          <label htmlFor="user-id">演示用户</label>
 
-          <input
-            id="user-id"
-            value={userId}
-            onChange={(event) => setUserId(event.target.value)}
-            placeholder="请输入用户 UUID"
-            autoComplete="off"
-          />
+          {users.length > 0 ? (
+            <select
+              id="user-id"
+              value={userId}
+              onChange={(event) => setUserId(event.target.value)}
+            >
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.external_id} - {user.display_name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id="user-id"
+              value={userId}
+              onChange={(event) => setUserId(event.target.value)}
+              placeholder="正在加载样例用户..."
+              autoComplete="off"
+            />
+          )}
 
           <label htmlFor="question">你的问题</label>
 
