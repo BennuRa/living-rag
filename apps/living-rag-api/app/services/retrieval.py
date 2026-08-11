@@ -82,6 +82,28 @@ def _preferred_policy_keys(query_text: str) -> tuple[str, ...]:
     return ()
 
 
+def _lexical_match_terms(query_text: str) -> tuple[str, ...]:
+    """Return high-signal terms used to stabilize Mock-Embedding retrieval."""
+
+    normalized_query = query_text.strip().lower()
+    terms: list[str] = []
+
+    if any(keyword in normalized_query for keyword in ("普通会员", "standard")):
+        terms.append("standard")
+    if any(keyword in normalized_query for keyword in ("银卡会员", "silver")):
+        terms.append("silver")
+    if any(keyword in normalized_query for keyword in ("金卡会员", "gold")):
+        terms.append("gold")
+    if any(keyword in normalized_query for keyword in ("铂金会员", "platinum")):
+        terms.append("platinum")
+    if any(keyword in normalized_query for keyword in ("签收", "退款期限", "退款时限", "多久")):
+        terms.extend(("申请期限", "退款期限", "签收"))
+    if any(keyword in normalized_query for keyword in ("运费", "谁承担")):
+        terms.extend(("退货运费", "承担", "运费"))
+
+    return tuple(dict.fromkeys(terms))
+
+
 def search_similar_chunks(
     db: Session,
     query_embedding: list[float],
@@ -194,6 +216,7 @@ def search_similar_chunks(
     )
 
     preferred_policy_keys = _preferred_policy_keys(query_text)
+    lexical_terms = _lexical_match_terms(query_text)
 
     distance = DocumentChunk.embedding.cosine_distance(
         query_embedding,
@@ -209,6 +232,14 @@ def search_similar_chunks(
         ).label("policy_priority")
     else:
         policy_priority = literal(0).label("policy_priority")
+
+    lexical_match_score = literal(0)
+    for term in lexical_terms:
+        lexical_match_score = lexical_match_score + case(
+            (DocumentChunk.content.ilike(f"%{term}%"), 1),
+            else_=0,
+        )
+    lexical_match_score = lexical_match_score.label("lexical_match_score")
 
     source_priority = case(
         (
@@ -290,6 +321,7 @@ def search_similar_chunks(
         base_statement
         .order_by(
             policy_priority.asc(),
+            lexical_match_score.desc(),
             source_priority.asc(),
             distance.asc(),
         )

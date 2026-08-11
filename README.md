@@ -158,6 +158,8 @@ docker compose exec -T api python "/app/scripts/ingest_sample_documents.py"
 6 个样例文档、8 个文档版本、56 个文档 Chunk
 ```
 
+文档导入会同步 `policy_key`、版本治理状态、有效期和版本链，并为尚未有向量的 Chunk 生成 Embedding。默认使用 Mock Embedding，因此基础演示不依赖 Ollama。
+
 Seed 和文档导入脚本支持重复执行。样例文档位于 `data/sample_documents/`，共享任务集位于 `shared/datasets/`。
 
 ## 快速演示
@@ -179,6 +181,7 @@ Seed 和文档导入脚本支持重复执行。样例文档位于 `data/sample_d
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | `POST` | `/api/chat` | 运行带引用的政策问答 |
+| `GET` | `/api/users` | 获取演示用的有效合成用户列表 |
 | `POST` | `/api/business-actions` | 查询退款资格或创建高风险审批 |
 | `POST` | `/documents/upload` | 上传文档并登记版本 |
 | `GET` | `/documents/{policy_key}/versions` | 查询文档版本 |
@@ -234,6 +237,12 @@ content_hash
 ```
 
 ## 测试
+
+测试使用独立数据库 `living_rag_test`。首次运行测试前执行一次：
+
+```powershell
+docker compose exec -T api python "/app/scripts/ensure_test_database.py"
+```
 
 运行后端全量测试：
 
@@ -311,6 +320,7 @@ docker compose up --build -d
 docker compose exec -T api alembic upgrade head
 docker compose exec -T api python "/app/scripts/seed_database.py"
 docker compose exec -T api python "/app/scripts/ingest_sample_documents.py"
+docker compose exec -T api python "/app/scripts/ensure_test_database.py"
 docker compose exec -T api python -m pytest "/app/tests" -q
 ```
 
