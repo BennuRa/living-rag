@@ -2,6 +2,14 @@
 
 Living RAG 是一个面向电商售后政策的动态知识库 Agent。它解决的不只是“上传文档后问答”，而是把政策版本、有效期、冲突、引用、订单会员工具、退款审批、审计和运行 Trace 放进一条可以解释和回放的业务链路。
 
+## 数据声明
+
+本仓库中的用户、订单、会员、政策和评测任务均为合成演示数据，不包含真实客户信息、生产订单或真实业务凭据。项目不连接真实支付、订单或 CRM 系统。
+
+```text
+All users, orders, policies, and evaluation cases in this repository are synthetic demo data.
+```
+
 ## 问题背景
 
 电商售后政策会持续更新，正式政策、FAQ、临时公告和运营通知可能出现版本差异或直接冲突。一个只依赖向量相似度和 LLM 生成的 RAG，可能引用过期政策、忽略冲突、猜测订单状态，甚至直接执行高风险退款操作。
@@ -190,12 +198,12 @@ E:\Living RAG\.env
 ```text
 DATABASE_URL=postgresql+psycopg://living_rag:change-me-before-production@postgres:5432/living_rag
 WEB_ORIGIN=http://localhost:3000
-EMBEDDING_PROVIDER=ollama
+EMBEDDING_PROVIDER=mock
 OLLAMA_BASE_URL=http://host.docker.internal:11434
 EMBEDDING_MODEL=nomic-embed-text
 ```
 
-没有可用 Ollama 时，基础演示可以使用当前 Mock 或兼容 Provider。Ollama 不属于默认启动依赖。
+默认使用 Mock Embedding，保证基础 Docker 演示不依赖额外模型服务。需要真实 Embedding 时，可以将 `.env` 中的 `EMBEDDING_PROVIDER` 改为 `ollama` 或 `openai_compatible`；Ollama 不属于默认启动依赖。
 
 ## Docker 启动
 

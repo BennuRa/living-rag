@@ -18,7 +18,9 @@ out/
 # Generated runtime files
 *.log
 outputs/
-data/
+data/runtime/
+data/uploads/
+data/storage/
 
 # Editor and OS files
 .DS_Store
