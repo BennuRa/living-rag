@@ -147,6 +147,14 @@ Web：http://localhost:3000
 
 ```powershell
 docker compose exec -T api alembic upgrade head
+docker compose exec -T api python "/app/scripts/prepare_demo_data.py"
+```
+
+`prepare_demo_data.py` 会幂等执行用户、会员、订单和退款历史 Seed，导入样例政策文档，同步检索使用的 `policy_key`，把样例版本映射到可检索的治理状态，并为缺失的文档 Chunk 生成 Embedding。默认使用确定性的 Mock Embedding，不需要安装 Ollama。
+
+如需单独执行底层步骤，也可以使用：
+
+```powershell
 docker compose exec -T api python "/app/scripts/seed_database.py"
 docker compose exec -T api python "/app/scripts/ingest_sample_documents.py"
 ```
@@ -235,6 +243,14 @@ content_hash
 
 ## 测试
 
+全新环境第一次运行测试前，先确保独立测试数据库存在：
+
+```powershell
+docker compose exec -T api python "/app/scripts/ensure_test_database.py"
+```
+
+这个命令可以重复执行，已存在时不会删除或重建数据库。
+
 运行后端全量测试：
 
 ```powershell
@@ -309,8 +325,8 @@ LICENSE                     MIT License
 Copy-Item .env.example .env
 docker compose up --build -d
 docker compose exec -T api alembic upgrade head
-docker compose exec -T api python "/app/scripts/seed_database.py"
-docker compose exec -T api python "/app/scripts/ingest_sample_documents.py"
+docker compose exec -T api python "/app/scripts/prepare_demo_data.py"
+docker compose exec -T api python "/app/scripts/ensure_test_database.py"
 docker compose exec -T api python -m pytest "/app/tests" -q
 ```
 

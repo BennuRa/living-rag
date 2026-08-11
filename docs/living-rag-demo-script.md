@@ -195,6 +195,15 @@ audit_logs
 
 ## 五、导入用户、会员、订单和退款历史
 
+推荐在完成迁移后直接执行一次完整样例数据准备：
+
+```powershell
+docker compose exec -T api python `
+    "/app/scripts/prepare_demo_data.py"
+```
+
+这个命令会依次完成 Seed、样例文档导入、治理状态准备和 Mock Embedding 生成。执行后可以跳过本节和下一节中的重复导入命令，直接进入问答演示。
+
 Seed 脚本主机路径：
 
 ```text
@@ -220,7 +229,7 @@ Seed 完成后，检查演示订单：
 docker compose exec -T postgres psql `
     -U living_rag `
     -d living_rag `
-    -c "SELECT order_no, status FROM orders WHERE order_no IN ('O2025001','O2025002','O2025003','O2025004','O2025005','O2025006','O2025007','O2025008') ORDER BY order_no;"
+    -c "SELECT order_number, status FROM orders WHERE order_number IN ('O2025001','O2025002','O2025003','O2025004','O2025005','O2025006','O2025007','O2025008') ORDER BY order_number;"
 ```
 
 预期可以查询到：
@@ -262,6 +271,8 @@ $userId
 
 ## 六、导入样例政策文档
 
+如果上一节已经执行 `prepare_demo_data.py`，本节的单独文档导入命令可以跳过。
+
 文档导入脚本主机路径：
 
 ```text
@@ -292,6 +303,8 @@ E:\Living RAG\data\sample_documents
 docker compose exec -T api python `
     "/app/scripts/ingest_sample_documents.py"
 ```
+
+单独导入文档后，还需要生成 Embedding 并准备治理状态；完整演示建议始终使用上一节的 `prepare_demo_data.py`。
 
 检查政策版本：
 
