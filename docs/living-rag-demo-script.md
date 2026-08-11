@@ -116,7 +116,7 @@ Up ... (healthy)
 
 ```powershell
 $healthResponse = Invoke-RestMethod `
-    -Uri "http://127.0.0.1:8000/health" `
+    -Uri "http://localhost:8000/health" `
     -Method Get
 
 $healthResponse | ConvertTo-Json -Depth 5
@@ -134,13 +134,13 @@ $healthResponse | ConvertTo-Json -Depth 5
 打开接口文档：
 
 ```text
-http://127.0.0.1:8000/docs
+http://localhost:8000/docs
 ```
 
 打开前端：
 
 ```text
-http://127.0.0.1:3000
+http://localhost:3000
 ```
 
 ## 四、执行数据库迁移
@@ -320,7 +320,7 @@ $requestBody = @{
 
 ```powershell
 $chatResponse = Invoke-RestMethod `
-    -Uri "http://127.0.0.1:8000/api/chat" `
+    -Uri "http://localhost:8000/api/chat" `
     -Method Post `
     -ContentType "application/json; charset=utf-8" `
     -Body ([System.Text.Encoding]::UTF8.GetBytes($requestBody))
@@ -375,7 +375,7 @@ $conflictBody = @{
 
 ```powershell
 $conflictResponse = Invoke-RestMethod `
-    -Uri "http://127.0.0.1:8000/api/chat" `
+    -Uri "http://localhost:8000/api/chat" `
     -Method Post `
     -ContentType "application/json; charset=utf-8" `
     -Body ([System.Text.Encoding]::UTF8.GetBytes($conflictBody))
@@ -424,7 +424,7 @@ $orderBody = ($orderBody | ConvertFrom-Json | ForEach-Object {
 } | ConvertTo-Json -Depth 20)
 
 $orderResponse = Invoke-RestMethod `
-    -Uri "http://127.0.0.1:8000/api/business-actions" `
+    -Uri "http://localhost:8000/api/business-actions" `
     -Method Post `
     -ContentType "application/json; charset=utf-8" `
     -Body ([System.Text.Encoding]::UTF8.GetBytes($orderBody))
@@ -477,7 +477,7 @@ $refundBody = @{
 } | ConvertTo-Json
 
 $refundResponse = Invoke-RestMethod `
-    -Uri "http://127.0.0.1:8000/api/business-actions" `
+    -Uri "http://localhost:8000/api/business-actions" `
     -Method Post `
     -ContentType "application/json; charset=utf-8" `
     -Body ([System.Text.Encoding]::UTF8.GetBytes($refundBody))
@@ -520,7 +520,7 @@ $approvalTaskId
 
 ```powershell
 $approvalTasks = Invoke-RestMethod `
-    -Uri "http://127.0.0.1:8000/approval-tasks" `
+    -Uri "http://localhost:8000/approval-tasks" `
     -Method Get
 
 $approvalTasks | ConvertTo-Json -Depth 20
@@ -571,7 +571,7 @@ $decisionBody = @{
 
 ```powershell
 $decisionResponse = Invoke-RestMethod `
-    -Uri "http://127.0.0.1:8000/approval-tasks/$approvalTaskId/decision" `
+    -Uri "http://localhost:8000/approval-tasks/$approvalTaskId/decision" `
     -Method Post `
     -Headers @{
         "X-Actor-ID" = $actorId
@@ -588,7 +588,7 @@ $decisionResponse | ConvertTo-Json -Depth 20
 
 ```powershell
 $refundAuditLogs = Invoke-RestMethod `
-    -Uri "http://127.0.0.1:8000/audit-logs?trace_id=$refundTraceId" `
+    -Uri "http://localhost:8000/audit-logs?trace_id=$refundTraceId" `
     -Method Get
 
 $refundAuditLogs | ConvertTo-Json -Depth 20
@@ -598,7 +598,7 @@ $refundAuditLogs | ConvertTo-Json -Depth 20
 
 ```powershell
 $allAuditLogs = Invoke-RestMethod `
-    -Uri "http://127.0.0.1:8000/audit-logs" `
+    -Uri "http://localhost:8000/audit-logs" `
     -Method Get
 
 $allAuditLogs | ConvertTo-Json -Depth 20
@@ -640,7 +640,7 @@ $qaTraceId = $chatResponse.trace_id
 
 ```powershell
 $runDetail = Invoke-RestMethod `
-    -Uri "http://127.0.0.1:8000/runs/$qaTraceId" `
+    -Uri "http://localhost:8000/runs/$qaTraceId" `
     -Method Get
 
 $runDetail | ConvertTo-Json -Depth 30
@@ -749,19 +749,19 @@ docker compose logs --tail 100 web
 
 1. 确认使用了正确的接口路径；
 2. 确认接口是否需要 `/api` 前缀；
-3. 打开 `http://127.0.0.1:8000/docs` 查看实际注册路由；
+3. 打开 `http://localhost:8000/docs` 查看实际注册路由；
 4. 确认没有把空变量拼接进 URL。
 
 运行详情正确路径：
 
 ```text
-http://127.0.0.1:8000/runs/{trace_id}
+http://localhost:8000/runs/{trace_id}
 ```
 
 审计日志正确路径：
 
 ```text
-http://127.0.0.1:8000/audit-logs
+http://localhost:8000/audit-logs
 ```
 
 如果中文输出乱码：

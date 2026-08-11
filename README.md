@@ -1,73 +1,55 @@
 # Living RAG
 
-Living RAG 是一个面向电商售后政策的动态知识库 Agent。它解决的不只是“上传文档后问答”，而是把政策版本、有效期、冲突、引用、订单会员工具、退款审批、审计和运行 Trace 放进一条可以解释和回放的业务链路。
+面向电商售后政策的版本感知、冲突治理与安全审批 Agent。
+
+Living RAG 处理售后政策持续更新过程中产生的版本混用、过期内容、来源冲突和高风险业务操作问题。
+
+## 项目状态
+
+当前里程碑：`living-rag-v0.1.0`（首个可演示 MVP）
+
+仓库当前重点是展示一个可启动、可测试、可追踪的 Living RAG 闭环。版本标签是否创建，以 Git 标签列表为准。
+
+第一版 Living RAG MVP 已完成：
+
+- 文档导入、版本管理和有效期治理；
+- PostgreSQL/pgvector 当前有效政策检索；
+- 带文档版本和原文 Chunk 的引用问答；
+- 正式政策、FAQ 和临时公告的冲突检测；
+- 冲突人工审核和文档失效；
+- 订单、用户、会员和退款历史查询；
+- Python 确定性退款资格判断；
+- 直接退款、政策修改和文档删除的审批门控；
+- 基于 `trace_id` 的运行详情、审批和审计关联；
+- Docker Compose、数据迁移、Seed、文档导入和可复现演示。
+
+`Agent Reliability Lab` 是后续阶段。当前仓库已包含共享任务集，但评测应用、批量运行器、LLM Judge、故障注入和回归报告尚未完成。
 
 ## 数据声明
 
-本仓库中的用户、订单、会员、政策和评测任务均为合成演示数据，不包含真实客户信息、生产订单或真实业务凭据。项目不连接真实支付、订单或 CRM 系统。
+本项目中的用户、订单、会员、政策和评测任务均为合成演示数据，不包含真实客户信息、生产订单或真实业务凭据。项目不连接真实支付、订单或 CRM 系统。
 
 ```text
 All users, orders, policies, and evaluation cases in this repository are synthetic demo data.
 ```
 
-## 问题背景
-
-电商售后政策会持续更新，正式政策、FAQ、临时公告和运营通知可能出现版本差异或直接冲突。一个只依赖向量相似度和 LLM 生成的 RAG，可能引用过期政策、忽略冲突、猜测订单状态，甚至直接执行高风险退款操作。
-
-## 项目定位
-
-Living RAG 针对这些问题提供：
-
-- 文档、版本和 Chunk 管理；
-- 有效期和文档状态治理；
-- 正式政策、FAQ 和临时公告的冲突检测；
-- 人工审核任务；
-- 带文档版本和原文片段的问答；
-- 订单、用户、会员和退款历史查询工具；
-- Python 确定性退款资格判断；
-- 退款申请、审批和审计；
-- LangGraph 节点级 Trace 和运行详情；
-- 共享的结构化 Agent 任务集。
-
-## 技术栈
-
-| 层次 | 技术 |
-| --- | --- |
-| API | FastAPI |
-| Agent 工作流 | LangGraph |
-| LLM/工具基础 | LangChain Core |
-| 数据校验 | Pydantic |
-| ORM | SQLAlchemy |
-| 数据库 | PostgreSQL 16 + pgvector |
-| 前端 | Next.js、TypeScript、Tailwind CSS |
-| 测试 | pytest |
-| 本地编排 | Docker Compose |
-| Embedding | Mock、Ollama 或 OpenAI-compatible Provider |
-
-## 系统架构
+## 核心架构
 
 ```mermaid
 flowchart LR
-    Browser["浏览器 / Next.js Web"]
-    API["FastAPI API"]
-    Graph["LangGraph QA Workflow"]
-    Services["检索、业务工具和安全服务"]
-    DB[("PostgreSQL + pgvector")]
-    Shared["/shared/datasets 共享任务集"]
-    Ollama["可选 Ollama"]
-
-    Browser --> API
-    API --> Graph
-    Graph --> Services
-    Services --> DB
-    Graph --> DB
-    API --> Shared
-    Graph -. 可选 .-> Ollama
+    Web["Next.js Web"] --> API["FastAPI API"]
+    API --> Graph["LangGraph QA Workflow"]
+    Graph --> Retrieval["Retrieval and Governance"]
+    Graph --> Business["Business Tools and Risk Gate"]
+    Retrieval --> DB[("PostgreSQL + pgvector")]
+    Business --> DB
+    Graph --> Trace["Trace, Approval and Audit"]
+    Trace --> DB
+    Shared["shared/datasets"] --> API
+    Graph -. optional .-> Ollama["Ollama Embedding"]
 ```
 
-Compose 默认启动 PostgreSQL、API 和 Web。Ollama 是可选模型依赖，不阻塞基础启动。
-
-## LangGraph 问答流程
+### LangGraph 问答流程
 
 ```mermaid
 flowchart TD
@@ -76,24 +58,154 @@ flowchart TD
     Intent --> Retrieve["retrieve_documents"]
     Retrieve --> Grade["grade_documents"]
     Grade --> Conflict["check_conflicts"]
-    Conflict -->|存在关键冲突| Safe["safe_conflict_response"]
-    Conflict -->|无关键冲突| Generate["generate_grounded_answer"]
-    Safe --> Verify["verify_citations"]
-    Generate --> Verify
-    Verify --> Save["save_run_and_message"]
-    Save --> End["END"]
+    Conflict -->|"关键冲突"| Safe["safe_conflict_response"]
+    Conflict -->|"无关键冲突"| Context["build_context"]
+    Context --> Generate["generate_answer"]
+    Safe --> Validate["validate_citations"]
+    Generate --> Validate
+    Validate --> End["END"]
 ```
 
-核心约束：
+核心安全边界：
 
-- 当前有效文档优先于已废弃、过期或待审核文档；
-- 引用必须能对应真实文档 Chunk；
-- 冲突未解决时不能擅自给出唯一政策结论；
-- 退款资格由 Python 规则服务判断，LLM 不直接裁定；
-- 直接退款、删除文档和修改规则必须经过人工审批；
-- 每次问答保存 `trace_id`，可以查询完整运行过程。
+- LLM 负责自然语言理解和结构化回答；
+- Python 规则服务负责退款资格判断；
+- 高风险动作必须进入人工审批；
+- 引用必须对应真实文档 Chunk；
+- 过期、失效和待审核文档不能作为当前政策依据。
 
-## 核心数据关系
+## 技术栈
+
+| 领域 | 技术 |
+| --- | --- |
+| API | Python、FastAPI、Pydantic |
+| Agent | LangGraph、LangChain Core |
+| 数据库 | PostgreSQL 16、pgvector、SQLAlchemy |
+| 文档和迁移 | Markdown/TXT 解析、Alembic |
+| 前端 | Next.js、React、TypeScript |
+| 工程化 | Docker Compose、pytest |
+| Embedding | Mock、Ollama、OpenAI-compatible Provider |
+
+## 快速启动
+
+### 环境要求
+
+- Windows 10/11、macOS 或 Linux；
+- Docker Desktop 或 Docker Engine；
+- Docker Compose v2；
+- 可选：Ollama 和 `nomic-embed-text`。
+
+### 创建本地配置
+
+```powershell
+Copy-Item .env.example .env
+```
+
+默认配置使用 Mock Embedding，因此基础演示不依赖 Ollama。需要真实 Embedding 时，将 `.env` 中的配置改为：
+
+```text
+EMBEDDING_PROVIDER=ollama
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+EMBEDDING_MODEL=nomic-embed-text
+```
+
+`.env` 只用于本地运行，不要提交到 Git；`.env.example` 只包含示例值。
+
+### 启动服务
+
+```powershell
+docker compose config --quiet
+docker compose up --build -d
+docker compose ps
+```
+
+首次启动会创建 PostgreSQL 数据卷。需要重新验证“从空数据库启动”的流程时，确认本地数据可以删除后执行：
+
+```powershell
+docker compose down -v
+docker compose up --build -d
+```
+
+`docker compose down -v` 会删除本地 PostgreSQL 数据，只用于明确的数据重置场景。
+
+健康检查：
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://localhost:8000/health" `
+  -Method Get
+```
+
+访问地址：
+
+```text
+API 文档：http://localhost:8000/docs
+Web：http://localhost:3000
+```
+
+### 初始化数据库和样例数据
+
+```powershell
+docker compose exec -T api alembic upgrade head
+docker compose exec -T api python "/app/scripts/seed_database.py"
+docker compose exec -T api python "/app/scripts/ingest_sample_documents.py"
+```
+
+当前样例数据包括：
+
+```text
+20 个用户、20 个会员账户、40 个订单、6 条退款历史
+6 个样例文档、8 个文档版本、56 个文档 Chunk
+```
+
+Seed 和文档导入脚本支持重复执行。样例文档位于 `data/sample_documents/`，共享任务集位于 `shared/datasets/`。
+
+## 快速演示
+
+完整演示脚本：[docs/living-rag-demo-script.md](docs/living-rag-demo-script.md)
+
+```text
+当前政策问答
+  -> 展示版本、治理状态和引用 Chunk
+  -> 查询订单和会员退款资格
+  -> 请求直接退款
+  -> 创建人工审批任务
+  -> 查看审批和审计日志
+  -> 使用 trace_id 查询运行详情
+```
+
+### 主要 API
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `POST` | `/api/chat` | 运行带引用的政策问答 |
+| `POST` | `/api/business-actions` | 查询退款资格或创建高风险审批 |
+| `POST` | `/documents/upload` | 上传文档并登记版本 |
+| `GET` | `/documents/{policy_key}/versions` | 查询文档版本 |
+| `POST` | `/api/retrieval/search` | 执行带治理过滤的检索 |
+| `GET` | `/approval-tasks` | 查询审批任务 |
+| `POST` | `/approval-tasks/{task_id}/decision` | 提交审批决定 |
+| `GET` | `/audit-logs` | 查询审计日志 |
+| `GET` | `/runs/{trace_id}` | 查询一次运行的完整详情 |
+
+注意：当前 API 路由沿用了已有模块边界，部分资源使用 `/api` 前缀，文档、审批、审计和运行详情路由使用无前缀路径。以 `/docs` 中的实际注册结果为准。
+
+问答响应包含 `answer`、`conditions`、`citations`、`citation_valid`、`confidence`、`limitations` 和 `trace_id`。
+
+一次运行可以通过 `trace_id` 关联：
+
+```text
+AgentRun
+AgentNodeRun
+ToolCall
+ChatMessage
+ApprovalTask
+AuditLog
+```
+
+直接退款不会被系统自动执行，而是返回待处理的人工审批任务。
+
+## 数据模型
 
 ```mermaid
 erDiagram
@@ -102,7 +214,6 @@ erDiagram
     CHAT_THREAD ||--o{ CHAT_MESSAGE : contains
     AGENT_RUN ||--o{ AGENT_NODE_RUN : contains
     AGENT_RUN ||--o{ TOOL_CALL : records
-    AGENT_RUN ||--o{ CHAT_MESSAGE : traces
     AGENT_RUN ||--o{ APPROVAL_TASK : requests
     AGENT_RUN ||--o{ AUDIT_LOG : records
     USER ||--o{ ORDER : places
@@ -110,385 +221,106 @@ erDiagram
     ORDER ||--o{ REFUND_REQUEST : has
 ```
 
-一次运行通过 `trace_id` 关联：
+文档治理核心字段：
 
 ```text
-AgentRun
-├── AgentNodeRun
-├── ToolCall
-├── ChatMessage
-├── ApprovalTask
-└── AuditLog
-```
-
-运行详情服务文件：
-
-```text
-E:\Living RAG\apps\living-rag-api\app\services\run_detail_service.py
-```
-
-运行详情 API：
-
-```text
-GET /runs/{trace_id}
-```
-
-## 项目目录
-
-```text
-E:\Living RAG\
-├── apps\living-rag-api\       FastAPI、LangGraph、RAG 和业务工具
-├── apps\living-rag-web\       Next.js 前端
-├── data\                       样例用户、订单和政策文档
-├── shared\datasets\            两个项目共享的 Agent 任务集
-├── docs\                       数据库设计和演示文档
-├── learning-notes\             每日学习日志
-├── infra\postgres\             PostgreSQL 初始化脚本
-├── docker-compose.yml          Docker 服务编排
-└── .env.example                配置模板
-```
-
-Day 16 任务集文件：
-
-```text
-E:\Living RAG\shared\datasets\qa\policy_qa.jsonl
-E:\Living RAG\shared\datasets\conflict-cases\policy_conflicts.jsonl
-E:\Living RAG\shared\datasets\agent-tasks\business_eligibility.jsonl
-E:\Living RAG\shared\datasets\fault-injection\fault_cases.jsonl
-E:\Living RAG\shared\datasets\adversarial\high_risk_and_multiturn.jsonl
-```
-
-当前共享任务集共 71 条，包含正常政策问答、版本过期、冲突、订单会员资格、高风险、多轮、故障注入和对抗任务。
-
-## 环境要求
-
-- Windows 10/11；
-- Docker Desktop；
-- Docker Compose v2；
-- PowerShell；
-- 可选：Node.js 20，用于不通过容器运行前端；
-- 可选：Ollama 和 `nomic-embed-text` 模型。
-
-## 配置环境变量
-
-配置模板：
-
-```text
-E:\Living RAG\.env.example
-```
-
-创建本地配置：
-
-```powershell
-Set-Location "E:\Living RAG"
-
-Copy-Item `
-  "E:\Living RAG\.env.example" `
-  "E:\Living RAG\.env"
-```
-
-不要提交：
-
-```text
-E:\Living RAG\.env
-```
-
-关键配置包括：
-
-```text
-DATABASE_URL=postgresql+psycopg://living_rag:change-me-before-production@postgres:5432/living_rag
-WEB_ORIGIN=http://localhost:3000
-EMBEDDING_PROVIDER=mock
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-EMBEDDING_MODEL=nomic-embed-text
-```
-
-默认使用 Mock Embedding，保证基础 Docker 演示不依赖额外模型服务。需要真实 Embedding 时，可以将 `.env` 中的 `EMBEDDING_PROVIDER` 改为 `ollama` 或 `openai_compatible`；Ollama 不属于默认启动依赖。
-
-## Docker 启动
-
-Compose 文件：
-
-```text
-E:\Living RAG\docker-compose.yml
-```
-
-先检查 Compose 配置：
-
-```powershell
-Set-Location "E:\Living RAG"
-
-docker compose config --quiet
-```
-
-启动 PostgreSQL、API 和 Web：
-
-```powershell
-docker compose up --build -d
-```
-
-查看服务：
-
-```powershell
-docker compose ps
-```
-
-期望看到：
-
-```text
-living-rag-postgres-1   Up (healthy)
-living-rag-api-1        Up
-living-rag-web-1        Up
-```
-
-API 健康检查：
-
-```powershell
-Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8000/health" `
-  -Method Get
-```
-
-访问地址：
-
-```text
-FastAPI 文档：http://127.0.0.1:8000/docs
-前端：http://127.0.0.1:3000
-```
-
-停止服务：
-
-```powershell
-docker compose down
-```
-
-以上命令不会删除 PostgreSQL 命名卷。需要清空本地数据库时，必须明确执行带卷删除的命令，并确认这是可接受的破坏性操作。
-
-## 从空数据库初始化
-
-后端目录：
-
-```text
-E:\Living RAG\apps\living-rag-api
-```
-
-Alembic 配置和迁移目录：
-
-```text
-E:\Living RAG\apps\living-rag-api\alembic.ini
-E:\Living RAG\apps\living-rag-api\alembic
-```
-
-执行数据库迁移：
-
-```powershell
-Set-Location "E:\Living RAG"
-
-docker compose exec -T api alembic upgrade head
-```
-
-导入用户、会员、订单和退款历史：
-
-```powershell
-docker compose exec -T api python `
-  "/app/scripts/seed_database.py"
-```
-
-Seed 文件：
-
-```text
-E:\Living RAG\apps\living-rag-api\scripts\seed_database.py
-```
-
-导入 Markdown 政策文档、版本和 Chunk：
-
-```powershell
-docker compose exec -T api python `
-  "/app/scripts/ingest_sample_documents.py"
-```
-
-文档导入脚本：
-
-```text
-E:\Living RAG\apps\living-rag-api\scripts\ingest_sample_documents.py
-```
-
-样例输入目录：
-
-```text
-E:\Living RAG\data\sample_documents
-```
-
-容器内对应目录：
-
-```text
-/data/sample_documents
-```
-
-## API 快速验证
-
-健康检查：
-
-```powershell
-Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8000/health" `
-  -Method Get
-```
-
-API 文档：
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-完整问答、审批、审计和 Trace 演示请执行：
-
-```text
-E:\Living RAG\docs\living-rag-demo-script.md
-```
-
-问答返回的 `trace_id` 可以用于查询：
-
-```powershell
-$traceId = $chatResponse.trace_id
-
-Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8000/runs/$traceId" `
-  -Method Get
-```
-
-审计日志接口：
-
-```text
-GET /audit-logs
-```
-
-运行详情接口：
-
-```text
-GET /runs/{trace_id}
+policy_key
+version_number
+governance_status
+effective_at
+expires_at
+supersedes_version_id
+content_hash
 ```
 
 ## 测试
 
-测试目录：
-
-```text
-E:\Living RAG\apps\living-rag-api\tests
-```
-
-运行完整测试：
+运行后端全量测试：
 
 ```powershell
-Set-Location "E:\Living RAG"
-
-docker compose exec -T api python -m pytest -q
+docker compose exec -T api python -m pytest "/app/tests" -q
 ```
 
-当前 Day 16 收尾时全量测试结果：
+当前验证结果：
 
 ```text
 300 passed, 2 warnings
 ```
 
-警告来自当前 FastAPI/Starlette TestClient 兼容提示和 LangGraph 依赖弃用提示，不影响测试通过。
+测试覆盖文档、Embedding、pgvector 检索、政策规则、冲突检测、人工审核、退款资格、审批、审计、Trace、运行详情、任务 Schema 和 JSON/JSONL 加载。
+
+上述结果是在 Docker Compose 的 API 容器中执行的，不能等同于生产环境的性能、可用性或安全认证测试。
+
+## 共享任务集
+
+当前包含 71 条结构化任务，覆盖：
+
+```text
+正常政策问答、版本和过期内容、冲突问题、订单会员资格、
+高风险操作、多轮对话、故障注入和对抗任务
+```
+
+任务 Schema 和加载器：
+
+```text
+apps/living-rag-api/app/schemas/agent_task_case.py
+apps/living-rag-api/app/services/task_dataset_loader.py
+```
 
 ## 风险控制
 
-- LLM 不直接裁定退款资格，资格判断由 Python 确定性服务完成；
-- 直接退款必须创建人工审批任务；
-- 删除政策文档必须审批；
-- 修改退款规则必须审批；
-- 审批结果写入审计日志；
+- LLM 不直接裁定退款资格，资格判断由 Python 确定性规则完成；
+- 直接退款、政策修改和文档删除必须经过人工审批；
+- 审批决定保留审批人、理由和时间；
 - 审批、审计、用户消息和 Agent Run 通过 `trace_id` 关联；
-- 冲突未解决时不擅自选择最终政策；
-- 过期、失效和待审核文档不能作为当前政策依据；
-- 引用必须通过真实 Chunk 校验；
-- 检索为空时保守回答，不编造结论；
-- 工具失败、超时或权限拒绝时不猜测业务数据；
-- 检索重写、生成修复和工具调用都有次数限制；
-- `.env`、API Key、密码和本地数据库数据不提交 Git。
-
-## 可选 Ollama
-
-Ollama 不是基础 Docker 启动的必需服务。需要本地模型时：
-
-1. 在 Windows 主机安装 Ollama；
-2. 拉取 `nomic-embed-text`；
-3. 修改本机配置文件：
-
-```text
-E:\Living RAG\.env
-```
-
-配置：
-
-```text
-EMBEDDING_PROVIDER=ollama
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-EMBEDDING_MODEL=nomic-embed-text
-```
-
-API 容器通过 `host.docker.internal` 访问 Windows 主机上的 Ollama。没有 Ollama 时，使用 Mock 或其他兼容 Provider 不应阻塞基础演示。
-
-## 演示脚本
-
-完整可复现演示：
-
-```text
-E:\Living RAG\docs\living-rag-demo-script.md
-```
-
-演示顺序：
-
-1. 启动 PostgreSQL、API 和 Web；
-2. 执行迁移；
-3. 导入用户、会员、订单和退款历史；
-4. 导入退款政策 v1、v2、v3；
-5. 导入冲突 FAQ；
-6. 查看冲突审核任务；
-7. 提问当前退款政策并展示引用和版本；
-8. 查询订单退款资格；
-9. 提交退款申请；
-10. 请求直接退款并展示审批门控；
-11. 查看审批任务和审计日志；
-12. 使用 `trace_id` 查看完整运行详情。
+- 引用必须对应真实文档 Chunk；
+- 检索为空时保守回答，不编造业务结论；
+- 工具失败、超时或权限拒绝时不猜测业务数据。
 
 ## 已知限制
 
-- 当前业务数据是模拟数据，不连接真实支付、订单或 CRM；
-- Mock LLM 没有真实输入 Token、输出 Token 和成本统计；
-- QA 检索主要记录在 `retrieve_documents` 节点快照中，尚未统一持久化为独立 `ToolCall`；
-- Ollama 需要额外安装模型，默认演示不依赖它；
-- 前端是关键流程演示页面，不是生产级后台；
-- 当前没有复杂 RBAC、Redis、Celery、Nginx 或生产级任务队列；
-- PowerShell 的中文显示可能受终端编码设置影响；
-- 当前系统目标是稳定可演示的 MVP，不宣称生产级全功能平台。
+- 当前使用合成业务数据，不连接真实支付、订单或 CRM；
+- 默认使用 Mock Embedding，不依赖 Ollama；
+- 当前使用 Mock LLM，不代表生产级模型质量；
+- 部分业务动作链路尚未统一持久化节点级 ToolCall；
+- 当前没有复杂 RBAC、Redis、Celery、Nginx 和生产级任务队列；
+- 前端定位为项目演示界面，不是生产级运营后台；
+- 项目目标是可运行、可验证、可解释的 MVP，不宣称生产级全功能平台。
 
-## 当前交付状态
+## 项目目录
 
-- Day 1 到 Day 14：Living RAG 核心 MVP 已完成；
-- Day 15：Trace、日志和运行详情已完成；
-- Day 16：共享任务协议、任务加载器和 71 条结构化任务已完成；
-- Day 17：Docker、README 和演示脚本已完成；
-- Day 18 之后：开始 Agent Reliability Lab。
+```text
+apps/living-rag-api/       FastAPI、LangGraph、RAG 和业务服务
+apps/living-rag-web/       Next.js 前端
+data/sample_documents/     合成样例用户、订单和政策数据
+shared/datasets/            共享 Agent 任务集
+docs/                       数据库设计和演示脚本
+infra/postgres/             PostgreSQL 初始化脚本
+docker-compose.yml          Docker 服务编排
+.env.example                配置模板
+LICENSE                     MIT License
+```
+
+## 从零开始的最短路径
+
+如果只想快速验证项目是否能运行，可以按以下顺序执行：
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build -d
+docker compose exec -T api alembic upgrade head
+docker compose exec -T api python "/app/scripts/seed_database.py"
+docker compose exec -T api python "/app/scripts/ingest_sample_documents.py"
+docker compose exec -T api python -m pytest "/app/tests" -q
+```
+
+之后打开 `http://localhost:3000`，或访问 `http://localhost:8000/docs` 调用 API。需要完整业务演示时，继续执行 [Living RAG 完整演示脚本](docs/living-rag-demo-script.md)。
 
 ## 相关文档
 
-数据库设计：
+- [数据库设计](docs/database-schema.md)
+- [完整演示脚本](docs/living-rag-demo-script.md)
 
-```text
-E:\Living RAG\docs\database-schema.md
-```
+## License
 
-Day 17 演示脚本：
-
-```text
-E:\Living RAG\docs\living-rag-demo-script.md
-```
-
-Day 16 学习日志：
-
-```text
-E:\Living RAG\learning-notes\day-16-automated-task-datasets.md
-```
+本项目使用 [MIT License](LICENSE)。
