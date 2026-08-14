@@ -186,3 +186,38 @@ def test_suspended_gold_member_read_only_query_requires_manual_review(
     assert payload["eligibility"]["requires_manual_review"] is True
     assert payload["membership_facts"]["tier"] == "gold"
     assert payload["membership_facts"]["status"] == "suspended"
+
+def test_read_only_query_extracts_order_number_adjacent_to_chinese_text(
+    client: TestClient,
+    db_session,
+) -> None:
+    """Chinese text directly adjacent to an order number must still work."""
+
+    user = _create_order_case(
+        db_session,
+        external_id="USR-READ-CHINESE-001",
+        order_number="O2025001",
+        tier=MembershipTier.STANDARD,
+        membership_status=MembershipAccountStatus.ACTIVE,
+        received_at="2026-01-05T14:30:00+08:00",
+        designated_free_return=False,
+    )
+
+    response = client.post(
+        "/api/business-actions",
+        json={
+            "user_id": str(user.id),
+            "question": "订单O2025001签收12天了，能退款吗？运费谁承担？",
+            "as_of": "2026-01-17T00:00:00+00:00",
+        },
+    )
+
+    assert response.status_code == 200
+
+    payload = response.json()
+
+    assert payload["action"] == "read_only"
+    assert payload["status"] == "eligible"
+    assert payload["order_number"] == "O2025001"
+    assert payload["eligibility"]["eligible"] is True
+    assert payload["eligibility"]["return_shipping_payer"] == "customer"

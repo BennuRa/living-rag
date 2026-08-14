@@ -23,7 +23,10 @@ from app.services.risk_gate import (
 )
 
 
-ORDER_NUMBER_PATTERN = re.compile(r"\bO\d+\b", re.IGNORECASE)
+ORDER_NUMBER_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9])O\d+(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
 
 
 def _extract_order_number(question: str) -> str | None:
