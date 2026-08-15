@@ -17,6 +17,7 @@ class EvaluationExecutionStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    TIMED_OUT = "timed_out"
     CANCELLED = "cancelled"
 
 
@@ -50,6 +51,13 @@ class EvaluationRun(BaseModel):
     dataset_id: UUID
     config: RunConfig
     status: EvaluationExecutionStatus = EvaluationExecutionStatus.PENDING
+
+    total_cases: int = Field(default=0, ge=0)
+    completed_cases: int = Field(default=0, ge=0)
+    succeeded_cases: int = Field(default=0, ge=0)
+    failed_cases: int = Field(default=0, ge=0)
+    timed_out_cases: int = Field(default=0, ge=0)
+
     started_at: datetime | None = None
     completed_at: datetime | None = None
 
@@ -61,7 +69,15 @@ class CaseRun(BaseModel):
     evaluation_run_id: UUID
     evaluation_case_id: UUID
     status: EvaluationExecutionStatus = EvaluationExecutionStatus.PENDING
+
+    attempt_count: int = Field(default=0, ge=0)
     result: AgentRunResult | None = None
+    trace_id: str | None = None
+    latency_ms: float | None = Field(default=None, ge=0)
+    token_usage: dict[str, int] | None = None
+    estimated_cost: float | None = Field(default=None, ge=0)
+    error_message: str | None = None
+
     started_at: datetime | None = None
     completed_at: datetime | None = None
 
@@ -87,3 +103,11 @@ class FaultInjectionRun(BaseModel):
     status: EvaluationExecutionStatus = EvaluationExecutionStatus.PENDING
     started_at: datetime | None = None
     completed_at: datetime | None = None
+
+
+class EvaluationRunArtifact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evaluation_run: EvaluationRun
+    evaluation_cases: list[EvaluationCase]
+    case_runs: list[CaseRun]

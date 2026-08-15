@@ -109,3 +109,133 @@ def test_fault_injection_run_rejects_unexpected_fields() -> None:
             ),
             unexpected_field="not allowed",
         )
+
+
+def test_evaluation_run_records_case_counts() -> None:
+    config = RunConfig(workflow_version="0.1.0")
+
+    run = EvaluationRun(
+        dataset_id=uuid4(),
+        config=config,
+        status=EvaluationExecutionStatus.RUNNING,
+        total_cases=20,
+        completed_cases=7,
+        succeeded_cases=5,
+        failed_cases=1,
+        timed_out_cases=1,
+    )
+
+    assert run.status == EvaluationExecutionStatus.RUNNING
+    assert run.total_cases == 20
+    assert run.completed_cases == 7
+    assert run.succeeded_cases == 5
+    assert run.failed_cases == 1
+    assert run.timed_out_cases == 1
+
+
+def test_case_run_records_execution_metadata() -> None:
+    run_id = uuid4()
+    case_id = uuid4()
+
+    case_run = CaseRun(
+        evaluation_run_id=run_id,
+        evaluation_case_id=case_id,
+        status=EvaluationExecutionStatus.SUCCEEDED,
+        attempt_count=1,
+        trace_id="trace-demo",
+        latency_ms=125.5,
+        token_usage={
+            "prompt_tokens": 120,
+            "completion_tokens": 80,
+            "total_tokens": 200,
+        },
+        estimated_cost=0.01,
+    )
+
+    assert case_run.status == EvaluationExecutionStatus.SUCCEEDED
+    assert case_run.attempt_count == 1
+    assert case_run.trace_id == "trace-demo"
+    assert case_run.latency_ms == 125.5
+    assert case_run.token_usage == {
+        "prompt_tokens": 120,
+        "completion_tokens": 80,
+        "total_tokens": 200,
+    }
+    assert case_run.estimated_cost == 0.01
+
+
+def test_case_run_supports_timeout_status_and_error() -> None:
+    case_run = CaseRun(
+        evaluation_run_id=uuid4(),
+        evaluation_case_id=uuid4(),
+        status=EvaluationExecutionStatus.TIMED_OUT,
+        attempt_count=2,
+        latency_ms=30000,
+        error_message="request timed out",
+    )
+
+    assert case_run.status == EvaluationExecutionStatus.TIMED_OUT
+    assert case_run.attempt_count == 2
+    assert case_run.error_message == "request timed out"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value"),
+    [
+        ("total_cases", -1),
+        ("completed_cases", -1),
+        ("succeeded_cases", -1),
+        ("failed_cases", -1),
+    ],
+)
+def test_evaluation_run_rejects_negative_counts(
+    field_name: str,
+    invalid_value: int,
+) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        EvaluationRun(
+            dataset_id=uuid4(),
+            config=RunConfig(workflow_version="0.1.0"),
+            **{field_name: invalid_value},
+        )
+
+    assert field_name in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value"),
+    [
+        ("attempt_count", -1),
+        ("latency_ms", -0.01),
+        ("estimated_cost", -0.01),
+    ],
+)
+def test_case_run_rejects_negative_execution_values(
+    field_name: str,
+    invalid_value: float,
+) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        CaseRun(
+            evaluation_run_id=uuid4(),
+            evaluation_case_id=uuid4(),
+            **{field_name: invalid_value},
+        )
+
+    assert field_name in str(exc_info.value)
+
+
+def test_evaluation_entities_use_pending_as_default_status() -> None:
+    run = EvaluationRun(
+        dataset_id=uuid4(),
+        config=RunConfig(workflow_version="0.1.0"),
+    )
+    case_run = CaseRun(
+        evaluation_run_id=run.evaluation_run_id,
+        evaluation_case_id=uuid4(),
+    )
+
+    assert run.status == EvaluationExecutionStatus.PENDING
+    assert case_run.status == EvaluationExecutionStatus.PENDING
+    assert case_run.attempt_count == 0
+    assert case_run.trace_id is None
+    assert case_run.result is None

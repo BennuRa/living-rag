@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from typing import Any
 
 import httpx
 
@@ -55,8 +54,6 @@ async def main(trace_id: str) -> None:
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        raise SystemExit(
-            "Usage: python scripts/get_living_rag_trace.py <trace_id>"
-        )
+        raise SystemExit("Usage: python scripts/get_living_rag_trace.py <trace_id>")
 
     asyncio.run(main(sys.argv[1]))
