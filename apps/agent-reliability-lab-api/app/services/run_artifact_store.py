@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -36,7 +37,7 @@ class EvaluationRunArtifactStore:
 
         if not target_path.is_file():
             raise FileNotFoundError(
-                f"Evaluation run artifact not found: {target_path}"
+                f"Evaluation run artifact not found: {target_path}",
             )
 
         payload = json.loads(
@@ -44,3 +45,45 @@ class EvaluationRunArtifactStore:
         )
 
         return EvaluationRunArtifact.model_validate(payload)
+
+    def list_runs(self) -> list[EvaluationRunArtifact]:
+        """Load all saved evaluation artifacts, newest completed run first."""
+
+        if not self._output_dir.is_dir():
+            return []
+
+        artifacts = [
+            self._load_path(path)
+            for path in self._output_dir.glob("*.json")
+        ]
+
+        return sorted(
+            artifacts,
+            key=self._artifact_sort_key,
+            reverse=True,
+        )
+
+    def _load_path(self, artifact_path: Path) -> EvaluationRunArtifact:
+        payload = json.loads(
+            artifact_path.read_text(encoding="utf-8"),
+        )
+
+        return EvaluationRunArtifact.model_validate(payload)
+
+    @staticmethod
+    def _artifact_sort_key(
+        artifact: EvaluationRunArtifact,
+    ) -> datetime:
+        evaluation_run = artifact.evaluation_run
+        timestamp = (
+            evaluation_run.completed_at
+            or evaluation_run.started_at
+        )
+
+        if timestamp is None:
+            return datetime.min.replace(tzinfo=UTC)
+
+        if timestamp.tzinfo is None:
+            return timestamp.replace(tzinfo=UTC)
+
+        return timestamp
