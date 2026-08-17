@@ -48,6 +48,20 @@ class AgentTaskCase(BaseModel):
     )
     expected_intent: str | None = None
     expected_citations: list[ExpectedCitation] = Field(default_factory=list)
+
+    # Day 21 uses these explicit expectations instead of inferring behavior
+    # from natural-language descriptions.
+    expected_nodes: list[str] = Field(default_factory=list)
+    expected_tools: list[str] = Field(default_factory=list)
+    requires_approval: bool = False
+    required_answer_terms: list[str] = Field(default_factory=list)
+    empty_retrieval_safe_response_terms: list[str] = Field(
+        default_factory=list,
+    )
+    unresolved_conflict_safe_response_terms: list[str] = Field(
+        default_factory=list,
+    )
+
     expected_behavior: list[str] = Field(min_length=1)
     forbidden_behavior: list[str] = Field(default_factory=list)
     failure_conditions: list[str] = Field(default_factory=list)
@@ -59,6 +73,11 @@ class AgentTaskCase(BaseModel):
         "expected_behavior",
         "forbidden_behavior",
         "failure_conditions",
+        "expected_nodes",
+        "expected_tools",
+        "required_answer_terms",
+        "empty_retrieval_safe_response_terms",
+        "unresolved_conflict_safe_response_terms",
         mode="before",
     )
     @classmethod

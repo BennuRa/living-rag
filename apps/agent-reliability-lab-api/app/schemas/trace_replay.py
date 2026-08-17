@@ -67,6 +67,11 @@ class TraceReplay(BaseModel):
     run_status: str = Field(min_length=1, max_length=32)
     intent: str | None = Field(default=None, max_length=128)
     workflow_version: str | None = Field(default=None, max_length=64)
+    action: str | None = Field(default=None, max_length=128)
+    approval_task_id: str | None = Field(default=None, max_length=128)
+    refund_request_id: str | None = Field(default=None, max_length=128)
+    retrieval_status: str | None = Field(default=None, max_length=64)
+    conflict_status: str | None = Field(default=None, max_length=64)
     final_answer: str | None = None
 
     messages: list[TraceMessage] = Field(default_factory=list)

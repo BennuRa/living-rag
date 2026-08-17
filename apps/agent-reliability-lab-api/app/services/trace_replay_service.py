@@ -32,10 +32,21 @@ class TraceReplayService:
         if not isinstance(agent_run, Mapping):
             raise TypeError("Living RAG trace agent_run must be an object")
 
-        run_status = self._optional_string(
-            raw_trace.get("run_status"),
-            agent_run.get("status"),
-        ) or "unknown"
+        agent_metadata = agent_run.get("metadata", {})
+        if agent_metadata is None:
+            agent_metadata = {}
+        if not isinstance(agent_metadata, Mapping):
+            raise TypeError(
+                "Living RAG trace agent_run.metadata must be an object",
+            )
+
+        run_status = (
+            self._optional_string(
+                raw_trace.get("run_status"),
+                agent_run.get("status"),
+            )
+            or "unknown"
+        )
 
         intent = self._optional_string(
             raw_trace.get("intent"),
@@ -60,6 +71,19 @@ class TraceReplayService:
                 run_status=run_status,
                 intent=intent,
                 workflow_version=workflow_version,
+                action=self._optional_string(agent_metadata.get("action")),
+                approval_task_id=self._optional_string(
+                    agent_metadata.get("approval_task_id"),
+                ),
+                refund_request_id=self._optional_string(
+                    agent_metadata.get("refund_request_id"),
+                ),
+                retrieval_status=self._optional_string(
+                    agent_metadata.get("retrieval_status"),
+                ),
+                conflict_status=self._optional_string(
+                    agent_metadata.get("conflict_status"),
+                ),
                 final_answer=final_answer,
                 messages=messages,
                 nodes=self._build_nodes(raw_trace.get("nodes", [])),
@@ -197,8 +221,7 @@ class TraceReplayService:
         for index, item in enumerate(items):
             if not isinstance(item, Mapping):
                 raise TypeError(
-                    "Living RAG trace "
-                    f"approval_tasks[{index}] must be an object",
+                    f"Living RAG trace approval_tasks[{index}] must be an object",
                 )
 
             approval_task_id = self._required_string(
