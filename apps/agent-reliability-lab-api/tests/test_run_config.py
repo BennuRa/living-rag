@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pytest
 from pydantic import ValidationError
 
@@ -11,6 +13,9 @@ def test_run_config_uses_defaults_and_normalizes_workflow_version() -> None:
     assert config.prompt_version is None
     assert config.timeout_seconds == 30.0
     assert config.model_name is None
+    assert config.llm_judge_enabled is False
+    assert config.llm_judge_model_name is None
+    assert config.max_llm_judge_calls == 0
 
 
 @pytest.mark.parametrize(
@@ -40,6 +45,8 @@ def test_run_config_rejects_invalid_input(
         ("max_retries", -1),
         ("max_retries", 4),
         ("cost_budget", -0.01),
+        ("max_llm_judge_calls", -1),
+        ("max_llm_judge_calls", 101),
     ],
 )
 def test_run_config_rejects_invalid_batch_settings(
@@ -63,6 +70,8 @@ def test_run_config_uses_safe_batch_defaults() -> None:
     assert config.max_concurrency == 3
     assert config.max_retries == 1
     assert config.cost_budget is None
+    assert config.llm_judge_enabled is False
+    assert config.max_llm_judge_calls == 0
 
 
 def test_run_config_accepts_explicit_batch_settings() -> None:
@@ -78,3 +87,54 @@ def test_run_config_accepts_explicit_batch_settings() -> None:
     assert config.max_concurrency == 5
     assert config.max_retries == 2
     assert config.cost_budget == 1.5
+
+
+def test_run_config_accepts_enabled_llm_judge_settings() -> None:
+    config = RunConfig(
+        workflow_version="0.1.0",
+        llm_judge_enabled=True,
+        llm_judge_model_name="test-judge-model",
+        max_llm_judge_calls=3,
+    )
+
+    assert config.llm_judge_enabled is True
+    assert config.llm_judge_model_name == "test-judge-model"
+    assert config.max_llm_judge_calls == 3
+
+
+@pytest.mark.parametrize(
+    ("llm_judge_enabled", "llm_judge_model_name", "max_llm_judge_calls", "message"),
+    [
+        (
+            True,
+            None,
+            1,
+            "llm_judge_model_name",
+        ),
+        (
+            True,
+            "test-judge-model",
+            0,
+            "max_llm_judge_calls",
+        ),
+        (
+            False,
+            None,
+            1,
+            "max_llm_judge_calls",
+        ),
+    ],
+)
+def test_run_config_rejects_inconsistent_llm_judge_settings(
+    llm_judge_enabled: bool,
+    llm_judge_model_name: str | None,
+    max_llm_judge_calls: int,
+    message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        RunConfig(
+            workflow_version="0.1.0",
+            llm_judge_enabled=llm_judge_enabled,
+            llm_judge_model_name=llm_judge_model_name,
+            max_llm_judge_calls=max_llm_judge_calls,
+        )

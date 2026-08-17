@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.agent_run_result import AgentRunResult
 from app.schemas.agent_task_case import AgentTaskCase
 from app.schemas.fault_injection import FaultInjectionConfig
+from app.schemas.llm_judge import LLMJudgeReport
 from app.schemas.rule_evaluation import RuleEvaluationReport
 from app.schemas.run_config import RunConfig
 
@@ -107,14 +108,23 @@ class FaultInjectionRun(BaseModel):
 
 
 class EvaluationRunArtifact(BaseModel):
+    """A complete, serializable record of one evaluation run."""
+
     model_config = ConfigDict(extra="forbid")
 
     evaluation_run: EvaluationRun
     evaluation_cases: list[EvaluationCase]
     case_runs: list[CaseRun]
 
-    # Day 19 artifacts do not contain this field. The default keeps them
-    # backward-compatible while allowing Day 21 reports to be persisted.
+    # Day 19 artifacts do not contain this field. The default preserves
+    # backward compatibility while allowing Day 21 reports to be persisted.
     rule_evaluations: list[RuleEvaluationReport] = Field(
+        default_factory=list,
+    )
+
+    # Day 22 Judge results are intentionally independent from deterministic
+    # rules. A Judge provider failure is stored as a failed Judge report and
+    # never overwrites rule_evaluations or CaseRun outcomes.
+    llm_judge_evaluations: list[LLMJudgeReport] = Field(
         default_factory=list,
     )
